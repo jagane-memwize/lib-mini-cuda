@@ -1,0 +1,5 @@
+/bin/
+/lib/
+*.o
+mc/kernels/*.cubin
+mc/kernels/*.text.bin

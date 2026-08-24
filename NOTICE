@@ -1,0 +1,26 @@
+NOTICE
+======
+
+libmc is an independent research project. It is not affiliated with, endorsed
+by, or supported by NVIDIA Corporation.
+
+The library uses private NVIDIA RM/UVM interfaces and directly writes GPU
+command streams and doorbells. It is experimental software with no warranty.
+
+Third-party sources
+-------------------
+
+`third_party/open-gpu-kernel-modules` is an unmodified checkout of NVIDIA's
+open GPU kernel modules, pinned at release 610.43.02. Its files retain their
+original per-file license terms; see the submodule's `COPYING` file.
+
+The Hopper QMD construction follows the field layout published by Mesa's NVK,
+which is MIT licensed. No NVK code is copied; the assignments were written
+against the published layout because NVIDIA's Hopper V04 QMD header is not
+included in the pinned driver source.
+
+Research provenance
+-------------------
+
+The observations, traces, and instrumented driver used to develop libmc live
+in https://github.com/maxime-peim/libcuda-research.
