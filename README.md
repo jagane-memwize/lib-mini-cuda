@@ -42,9 +42,9 @@ sudo ./bin/mc_demo
 
 - `mc/` — public header and library implementation
 - `tests/mc/` — integration demos and benchmarks
-- `tests/unit/` — host-only driver-version tests
+- `tests/unit/` — host-only ABI and selection tests
 - `tools/run_mc_tests.py` — integration-test matrix runner
-- `docs/` — implementation architecture and Hopper compute-launch notes
+- `docs/` — concise architecture and Hopper compute-launch guides
 - `third_party/open-gpu-kernel-modules/` — pinned NVIDIA source submodule
 
 Start with [`mc/README.md`](mc/README.md) for the API and constraints. The

@@ -38,9 +38,9 @@
  * at those same addresses.  This guarantees GPU VA == user VA for every
  * UVM-mapped allocation (Paper Finding 1), which is what the kernel-side
  * doorbell watchpoint relies on and, empirically, what the GPU itself
- * needs for reliable submissions on H100 PCIe
- * (docs/mc_architecture.md §3.7; --size 128M went 66/100 before
- * adopting this layout and 1000/1000 at N=1000 after).
+ * needs for reliable submissions on H100 PCIe.  At --size 128M the path
+ * passed 66/100 times before this layout and 1000/1000 after; provenance is
+ * in libcuda-research/docs/findings.md under "Paper-F1 VA identity".
  *
  * Our pool is a 4-GiB PROT_NONE anonymous reservation at MC_VA_POOL_BASE
  * = 0x200000000.  rm_alloc_sysmem_at, rm_map_memory_at, and

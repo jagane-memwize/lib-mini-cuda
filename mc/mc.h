@@ -196,7 +196,8 @@ void *mc_malloc_host(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
  * during DMA, which removes slow iterations rather than raising the
  * ceiling.  Measured on H100 PCIe, a 4 MiB H2D runs at the same peak
  * either way (51.6 GB/s) but averages 16% higher write-combined; by
- * 64 MiB the two are indistinguishable (see libcuda-research findings §11).
+ * 64 MiB the two are indistinguishable (see the "Transfer performance"
+ * section of libcuda-research/docs/findings.md).
  * NVIDIA documents up to 40% for the CUDA equivalent.  Use this only
  * when the host never reads the buffer back; a single accidental read
  * loop costs more than the DMA gain saves.  mc_memcpy treats both

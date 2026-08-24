@@ -225,7 +225,7 @@ int main(int argc, char **argv)
       mc_test_seed_pattern((uint32_t *)h_verify, n / 4, GARBLE);
       /* Flush h_verify to sysmem so the GPU's PCIe MRd path reads
        * the CPU-written GARBLE rather than stale-or-zero physical
-       * pages (the H100 test host is a VMware passthrough where the host root
+       * pages (the measured H100 VMware-passthrough host's root
        * complex's snoop of CPU caches on PCIe MRd is unreliable;
        * library coherency contract per mc.h applies). */
       for (off = 0; off < n; off += 64)

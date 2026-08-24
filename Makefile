@@ -200,7 +200,8 @@ mc/mc_sm_owner_sass.h: mc/kernels/sm_owner.cu
 	@# on Hopper.  The LDG bypasses L1 (.cg cache class), the MEMBAR
 	@# provides system-scope ordering — the combination is what makes
 	@# the SM observe PBDMA's CE-released sema (proven by the N=1000
-	@# stability sweep; see libcuda-research docs/findings.md §14).
+	@# stability sweep; see libcuda-research docs/findings.md under
+	@# "FB-carrier and cross-engine ordering").
 	@# Earlier `.relaxed.sys` lowering to LDG.E.STRONG.SYS spun on
 	@# stale L1 forever.
 	@# Gate on both the GPU-scope LDG inside the loop AND at least one

@@ -136,7 +136,7 @@ are not addressable from carrier-bound channels, and vice versa;
 the CPU VA and the GPU VA**.  This is a hard invariant baked into UVM's
 external-range registration — violating it produces intermittent
 GPU-MMU corruptions on H100 PCIe (25–34 % failure rate before this was
-understood; see [libcuda-research findings §13][findings]).  The library anchors every
+understood; see [the Paper-F1 evidence][paper-f1]).  The library anchors every
 UVM-host allocation into the VA pool, so users don't think about it.
 
 `mc_malloc_host(ctx, n, MC_VAS_SYSMEM_CARRIER)` and the
@@ -185,7 +185,12 @@ int main(void) {
 }
 ```
 
-Build: `cc -Imc myapp.c -Llib -lmc -Wl,-rpath,'$ORIGIN/../lib'`.
+Build into `bin/` so the same relative runtime path as the repository's test
+binaries applies:
+
+```sh
+cc -Imc myapp.c -Llib -lmc -Wl,-rpath,'$ORIGIN/../lib' -o bin/myapp
+```
 Initialize the pinned official driver-source submodule, then from the repository
 root run `make libmc` or `make mc_demo` (see
 `tests/mc/mc_demo.c` for the full-featured demo).  `NVIDIA_SRC` may point at an
@@ -221,10 +226,10 @@ FB-carrier path) and `tests/mc/mc_sm_owner_demo.c`.
 - **One context per process.** `mc_init` reserves a process-global VA pool;
   creating a second context in the same process is unsupported and does not
   create an independent pool.
-- **Size bounds.**  Per allocation and per transfer: 4 KiB ≤ n ≤ 4 GiB − 1.
-  CE's `LINE_LENGTH_IN` is a 32-bit method; carrier-vidmem allocs
-  additionally need 64-KiB or 2-MiB GPU-VA alignment depending on
-  size (handled internally).
+- **Size bounds.** Per allocation and per transfer: 1 ≤ n ≤ 4 GiB − 1.
+  CE's `LINE_LENGTH_IN` is a 32-bit method. Internal mappings round and align
+  ranges as required. The demonstration CLI uses dword-aligned sizes because
+  its pattern generator operates on `uint32_t`; that is not a library limit.
 - **Environment.**  Set `MC_VERBOSE=1` for debug-level stderr output.
   Requires `sudo` for `/dev/nvidia0`, `/dev/nvidiactl`,
   `/dev/nvidia-uvm`.
@@ -305,7 +310,9 @@ the cross-TU helper API + log macros.
 
 **Reference / cross-check:**
 
-- [`../docs/mc_architecture.md`](../docs/mc_architecture.md) — the driver-level flow behind this
-  API: every ioctl, every kernel path, and the bug log from bring-up.
+- [`../docs/mc_architecture.md`](../docs/mc_architecture.md) — concise context,
+  VA-space, channel, and submission architecture.
+- [`../docs/compute_kernel_launch.md`](../docs/compute_kernel_launch.md) — the
+  Hopper compute and SM-authored copy chain.
 
-[findings]: https://github.com/maxime-peim/libcuda-research/blob/main/docs/findings.md#13-va-pool-fix-for-intermittent-d2h-failures-2026-05-12
+[paper-f1]: https://github.com/maxime-peim/libcuda-research/blob/main/docs/findings.md#paper-f1-va-identity

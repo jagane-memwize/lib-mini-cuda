@@ -358,8 +358,9 @@ NvU64 uvm_map_buffer(int uvm_fd, int dev_fd, NvHandle h_client,
  * its GPU-VA base — a GPFIFO-entry-recorded pb_va translates back to a
  * kernel VA for method-stream decoding.  It also matters for
  * correctness: a UVM-mapped CPU-aliased buffer whose GPU VA ≠ CPU VA
- * wedges the GPU ~25% of the time on H100 PCIe
- * (see docs/mc_architecture.md §3.7 and §12 bug #12).
+ * wedges the GPU ~25% of the time on H100 PCIe.  The measured failure and
+ * fix are recorded in libcuda-research/docs/findings.md under
+ * "Paper-F1 VA identity".
  */
 NvU64 uvm_map_buffer_at(int uvm_fd, int dev_fd, NvHandle h_client,
                                const NvU8 inst_uuid[NV_UUID_LEN],

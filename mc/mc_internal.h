@@ -119,9 +119,6 @@
 
 /* Upper bound per single CE launch (LINE_LENGTH_IN is a 32-bit byte count). */
 #define MC_MAX_TRANSFER_SIZE    (0xFFFFFFFFULL)
-/* Lower bound: UVM_CREATE_EXTERNAL_RANGE needs GPU-MMU-page alignment. */
-#define MC_MIN_TRANSFER_SIZE    4096ULL
-
 #define MC_CONTROL_DEV_PATH     "/dev/nvidiactl"
 #define MC_DEVICE_DEV_PATH      "/dev/nvidia0"
 

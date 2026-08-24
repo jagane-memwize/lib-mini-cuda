@@ -17,8 +17,8 @@
  *      release sema), the SM thread runs `*dst = token; exit`.
  *   4. Read back through cpu_ptr.  Expected: 0xdeadbeef.
  *
- * Run on the H100 test host with the kernel doorbell watchpoint disabled (set
- * via /etc/modprobe.d/nvidia-dbell-bypass.conf).
+ * Official modules need no doorbell setting.  If the instrumented modules
+ * from libcuda-research are loaded, disable their doorbell interception.
  *
  *   sudo ./bin/mc_compute_dbell_demo
  */
@@ -86,7 +86,7 @@ int main(void)
 
   /* CLFLUSH each nearby cell + mfence to ensure CPU sees DRAM.
    *
-   * NOT optional — empirically required.  At N=20 on the H100 test host:
+   * NOT optional for this cacheable scratch mapping — empirically, at N=20:
    *   no clflush, mfence only:  1/20 PASS
    *   clflush + mfence:        20/20 PASS
    *

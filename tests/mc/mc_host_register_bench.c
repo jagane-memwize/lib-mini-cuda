@@ -38,7 +38,7 @@
  * original malloc pointer after the sample.  Without --alignment, samples use
  * the raw malloc pointer.
  *
- * Build: cd reverse && make mc_host_register_bench
+ * Build: make mc_host_register_bench
  * Run:   sudo ./bin/mc_host_register_bench --size 4M --iters 30
  */
 

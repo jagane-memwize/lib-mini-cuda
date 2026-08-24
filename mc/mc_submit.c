@@ -206,7 +206,8 @@ uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
  *
  *   2. Write the channel's work-submit-token to the VF doorbell
  *      (NV_VIRTUAL_FUNCTION_DOORBELL = 0x30090 *relative to the VF
- *      register block*, not to BAR0; reached here at +0x90 inside the
+ *      register block*, not to BAR0 — on bare metal the same register
+ *      is at BAR0 + 0xBB0090; reached here at +0x90 inside the
  *      USERMODE mapping — see MC_VF_DOORBELL_OFFSET).  This is the
  *      actual wake-up signal: the host scheduler looks up the channel
  *      by token, verifies it's on the runlist, and forwards a
