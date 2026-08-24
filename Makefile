@@ -80,7 +80,8 @@ LIBMC := lib/libmc.so
 MC_LIB_SRCS := mc/mc_core.c mc/mc_rm.c mc/mc_uvm.c mc/mc_submit.c \
                mc/mc_vaspace.c mc/mc_compute_qmd.c \
                mc/mc_compute_demo.c mc/mc_sm_owner.c
-UNIT_TEST_BINS := bin/mc_rm_version_test bin/mc_init_version_test
+UNIT_TEST_BINS := bin/mc_rm_version_test bin/mc_init_version_test \
+                  bin/mc_lce_selection_test
 
 BINS := $(MC_BINS)
 LIBS := $(LIBMC)
@@ -295,6 +296,12 @@ bin/mc_rm_version_test: tests/unit/mc_rm_version_test.c mc/mc_rm.c \
                         | bin check-nvidia-source
 	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(SDK_INC) -Imc -o $@ \
 	    tests/unit/mc_rm_version_test.c mc/mc_rm.c -Wl,--wrap=ioctl
+
+bin/mc_lce_selection_test: tests/unit/mc_lce_selection_test.c mc/mc_rm.c \
+                           mc/mc.h mc/mc_internal.h compat/nvidia.mk \
+                           | bin check-nvidia-source
+	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(SDK_INC) -Imc -o $@ \
+	    tests/unit/mc_lce_selection_test.c mc/mc_rm.c -Wl,--wrap=ioctl
 
 bin/mc_init_version_test: tests/unit/mc_init_version_test.c $(MC_LIB_SRCS) \
                           mc/mc.h mc/mc_internal.h compat/nvidia.mk \

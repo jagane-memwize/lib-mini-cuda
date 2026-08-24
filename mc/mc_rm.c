@@ -915,22 +915,23 @@ int rm_control(int ctl_fd, NvHandle client, NvHandle object, NvU32 cmd,
  * runlist 0.  UVM_REGISTER_CHANNEL then rejects the channel with
  * NV_ERR_INVALID_OBJECT (0x31).
  *
- * Picking the first non-GRCE LCE is what libcuda does on H100 PCIe and
- * keeps the upstream engine-classification path unambiguous.  Must be
- * called AFTER allocating the subdevice and BEFORE allocating the TSG
+ * Picking the first sysmem-capable, non-GRCE LCE is what libcuda does on
+ * H100 PCIe and keeps the upstream engine-classification path unambiguous.
+ * Must be called AFTER allocating the subdevice and BEFORE allocating the TSG
  * (whose engineType we then set to the returned value).  The same value
  * must flow into the CE object alloc too — cross-checked at
  * the TSG engine-Id cross-check in kernel_channel.c.
  *
- * Returns NV2080_ENGINE_TYPE_COPY0 + <lce_index>, or (NvU32)-1 if no
- * non-GRCE LCE is present (not expected on Hopper).
+ * COPY engine IDs are discontinuous after COPY9, so the LCE index must be
+ * converted with NV2080_ENGINE_TYPE_COPY() rather than simple addition.
+ * Returns the engine type, or (NvU32)-1 if no suitable LCE is present.
  */
 NvU32 pick_non_grce_lce(int ctl_fd, NvHandle h_client,
                                NvHandle h_subdevice)
 {
   NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS caps = {};
   NvU32                              lce;
-  NvU32                              first_non_grce = (NvU32)-1;
+  NvU32                              selected_lce = (NvU32)-1;
 
   if (rm_control(ctl_fd, h_client, h_subdevice, NV2080_CTRL_CMD_CE_GET_ALL_CAPS,
                  &caps, sizeof(caps)) != 0)
@@ -939,21 +940,27 @@ NvU32 pick_non_grce_lce(int ctl_fd, NvHandle h_client,
   for (lce = 0; lce < NV2080_CTRL_MAX_CES; lce++)
   {
     NvBool grce;
+    NvBool sysmem;
     if (!((caps.present >> lce) & 1))
       continue;
     grce = !!NV2080_CTRL_CE_GET_CAP(caps.capsTbl[lce],
                                     NV2080_CTRL_CE_CAPS_CE_GRCE);
-    if (!grce && first_non_grce == (NvU32)-1)
-      first_non_grce = lce;
+    sysmem = !!NV2080_CTRL_CE_GET_CAP(caps.capsTbl[lce],
+                                      NV2080_CTRL_CE_CAPS_CE_SYSMEM);
+    if (!grce && sysmem)
+    {
+      selected_lce = lce;
+      break;
+    }
   }
 
-  if (first_non_grce == (NvU32)-1)
+  if (selected_lce == (NvU32)-1)
   {
-    ERROR_LOG("no non-GRCE LCE present (present=0x%llx)",
+    ERROR_LOG("no sysmem-capable non-GRCE LCE present (present=0x%llx)",
               (unsigned long long)caps.present);
     return (NvU32)-1;
   }
-  return NV2080_ENGINE_TYPE_COPY0 + first_non_grce;
+  return NV2080_ENGINE_TYPE_COPY(selected_lce);
 }
 
 /* ── RM object type helpers ────────────────────────────────────────────────
