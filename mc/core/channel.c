@@ -31,14 +31,6 @@
 #include "class/cla06fsubch.h"          /* NVA06F_SUBCHANNEL_COPY_ENGINE / _COMPUTE */
 #include "ctrl/ctrlc36f.h"              /* NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN */
 #include "arch/hopper/qmd_v04.h"
-#include "arch/hopper/doorbell_sass.h"   /* mc_doorbell_kernel_sass — staged
-                                          * once at compute-channel init */
-#include "arch/hopper/sm_owner_sass.h"  /* mc_sm_owner_kernel_sass — second
-                                         * embedded kernel; the SM thread
-                                         * authors the entire CE-channel
-                                         * submission (PB+GPFIFO+USERD+
-                                         * doorbell) instead of just the
-                                         * doorbell write. */
 
 #include "internal/types.h"
 #include "internal/log.h"
@@ -514,13 +506,13 @@ int mc_compute_channel_init(mc_ctx_t *ctx, mc_vas_t slot)
    * kind — only the channel-core PB/GPFIFO/USERD/sema follow the
    * carrier's aperture rule). */
   if (mc_compute_module_init(ctx, slot, &ex->module,
-                             mc_doorbell_kernel_sass,
-                             MC_DOORBELL_SASS_LEN) != 0)
+                             ctx->arch->kernels.doorbell.bytes,
+                             ctx->arch->kernels.doorbell.len) != 0)
     return -1;
 
   if (mc_compute_module_init(ctx, slot, &ex->sm_owner_module,
-                             mc_sm_owner_kernel_sass,
-                             MC_SM_OWNER_SASS_LEN) != 0)
+                             ctx->arch->kernels.sm_owner.bytes,
+                             ctx->arch->kernels.sm_owner.len) != 0)
     return -1;
 
   DEBUG_LOG("mc_compute_channel ok: vas=%d tsg=0x%x ch=0x%x compute=0x%x "

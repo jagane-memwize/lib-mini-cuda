@@ -66,7 +66,6 @@
 #include "hal/methods.h"
 #include "arch/hopper/qmd_v04.h"
 #include "kernels/sm_owner_args.h"
-#include "arch/hopper/sm_owner_sass.h"
 
 /* ── struct mc_sm_owner_args host/device ABI guards ────────────────────
  *
@@ -378,7 +377,8 @@ mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
    * REGISTER_COUNT differ from the embedded-doorbell module.
    * CB0 binding uses MC_CB0_TOTAL_BYTES_ALIGNED for size. */
   compute_ch->arch->compute->build_qmd(mod->qmd_cpu,
-                                       mod->sass_gpu_va, MC_SM_OWNER_REGS,
+                                       mod->sass_gpu_va,
+                                       compute_ch->arch->kernels.sm_owner.regs,
                                        mod->cb0_gpu_va,
                                        MC_CB0_TOTAL_BYTES_ALIGNED);
 

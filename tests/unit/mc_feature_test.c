@@ -50,11 +50,18 @@ static const mc_compute_ops_t stub_compute = {
     .version_major = 4, .build_qmd = stub_build_qmd,
 };
 
-/* Hopper-shaped: BAR1 aperture and compute support. */
+/* Stand-in cubins.  Only presence and length are consulted here. */
+static const uint8_t stub_sass[16];
+#define STUB_KERNELS                                            \
+    { .sm_owner = { stub_sass, sizeof(stub_sass), 32 },         \
+      .doorbell = { stub_sass, sizeof(stub_sass), 8 } }
+
+/* Hopper-shaped: BAR1 aperture, compute support, both cubins present. */
 static const mc_arch_desc_t desc_full = {
     .name = "synthetic-full",
     .cap = { .usermode_bar1_capable = true },
     .compute = &stub_compute,
+    .kernels = STUB_KERNELS,
 };
 
 /* Ampere/Ada-shaped: compute, but no BAR1 usermode aperture. */
@@ -62,6 +69,7 @@ static const mc_arch_desc_t desc_no_bar1 = {
     .name = "synthetic-no-bar1",
     .cap = { .usermode_bar1_capable = false },
     .compute = &stub_compute,
+    .kernels = STUB_KERNELS,
 };
 
 /* A device whose class list lacked the compute class. */
@@ -69,6 +77,17 @@ static const mc_arch_desc_t desc_no_compute = {
     .name = "synthetic-no-compute",
     .cap = { .usermode_bar1_capable = true },
     .compute = NULL,
+    .kernels = STUB_KERNELS,
+};
+
+/* A backend written before its cubins were generated: full capability on
+ * paper, no compiled kernels.  SASS does not port across SM versions, so this
+ * is the normal state of a new backend and must degrade rather than break. */
+static const mc_arch_desc_t desc_no_cubins = {
+    .name = "synthetic-no-cubins",
+    .cap = { .usermode_bar1_capable = true },
+    .compute = &stub_compute,
+    /* .kernels left zeroed */
 };
 
 static void test_full_architecture(void)
@@ -127,9 +146,27 @@ static void test_no_compute(void)
   printf("PASS: absent compute support removes only compute-dependent features\n");
 }
 
+static void test_missing_cubins(void)
+{
+  uint64_t a = mc_features_available(&desc_no_cubins);
+
+  /* Copies never needed a kernel. */
+  EXPECT_MSG(HAS(a, MC_FEAT_XFER_HOST),      "no-cubins: lost xfer_host");
+  EXPECT_MSG(HAS(a, MC_FEAT_CARRIER_SYSMEM), "no-cubins: lost carrier_sysmem");
+  EXPECT_MSG(HAS(a, MC_FEAT_CARRIER_FB),     "no-cubins: lost carrier_fb");
+
+  /* Anything that launches a kernel needs its bytes. */
+  EXPECT_MSG(!HAS(a, MC_FEAT_COMPUTE_LAUNCH),
+             "no-cubins: offers compute_launch with no doorbell cubin");
+  EXPECT_MSG(!HAS(a, MC_FEAT_XFER_SM),
+             "no-cubins: offers xfer_sm with no sm_owner cubin");
+  printf("PASS: absent cubins remove only the features that launch them\n");
+}
+
 static void test_dependency_closure_is_total(void)
 {
-  const mc_arch_desc_t *descs[] = { &desc_full, &desc_no_bar1, &desc_no_compute };
+  const mc_arch_desc_t *descs[] = { &desc_full, &desc_no_bar1, &desc_no_compute,
+                                    &desc_no_cubins };
   size_t d;
 
   /* No feature may ever be available while something it depends on is not.
@@ -175,6 +212,7 @@ int main(void)
   test_full_architecture();
   test_no_bar1_loses_doorbell_paths();
   test_no_compute();
+  test_missing_cubins();
   test_dependency_closure_is_total();
   test_names_and_bounds();
 

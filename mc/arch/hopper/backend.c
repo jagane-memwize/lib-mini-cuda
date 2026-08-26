@@ -28,6 +28,10 @@
 
 #include "hal/arch.h"
 
+/* Generated from the sources under mc/kernels; see KERNEL_RULE in the Makefile. */
+#include "arch/hopper/sm_owner_sass.h"
+#include "arch/hopper/doorbell_sass.h"
+
 extern const mc_arch_ops_t    mc_arch_hopper_ops;
 extern const mc_compute_ops_t mc_arch_hopper_compute;
 #include "internal/types.h"
@@ -68,6 +72,13 @@ const mc_arch_desc_t mc_arch_hopper = {
 
     .ops     = &mc_arch_hopper_ops,
     .compute = &mc_arch_hopper_compute,
+
+    .kernels = {
+        .sm_owner = { mc_sm_owner_kernel_sass, MC_SM_OWNER_SASS_LEN,
+                      MC_SM_OWNER_REGS },
+        .doorbell = { mc_doorbell_kernel_sass, MC_DOORBELL_SASS_LEN,
+                      MC_DOORBELL_REGS },
+    },
 
     .cap = {
         /* HOPPER_USERMODE_A is RS_OPTIONAL(NV_HOPPER_USERMODE_A_PARAMS) and

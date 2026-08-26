@@ -82,9 +82,19 @@ uint64_t mc_features_available(const mc_arch_desc_t *arch)
         avail |= MC_FEAT_BIT(MC_FEAT_COMPUTE_LAUNCH);
 
 #if MC_ENABLE_EXPERIMENTAL
-    if (arch->compute != NULL)
+    /* SM-authored submission runs a specific compiled kernel.  SASS does not
+     * port across SM versions, so a backend without a cubin for it cannot
+     * offer the feature no matter what else it supports -- and a backend
+     * being written before its cubin exists is a normal intermediate state,
+     * not an error. */
+    if (arch->compute != NULL && arch->kernels.sm_owner.bytes != NULL
+        && arch->kernels.sm_owner.len != 0)
         avail |= MC_FEAT_BIT(MC_FEAT_XFER_SM);
 #endif
+
+    /* Likewise the doorbell kernel: the compute-launch demos need its bytes. */
+    if (arch->kernels.doorbell.bytes == NULL || arch->kernels.doorbell.len == 0)
+        avail &= ~MC_FEAT_BIT(MC_FEAT_COMPUTE_LAUNCH);
 
     /* Close over dependencies.  Iterating to a fixed point rather than
      * assuming the table is topologically ordered means the table can be

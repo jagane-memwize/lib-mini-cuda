@@ -17,9 +17,27 @@
 #include "hal/arch.h"
 #include "hal/registry.h"
 
+/* Membership follows MC_ARCHS: the Makefile passes -DMC_HAVE_ARCH_<NAME> for
+ * each architecture whose sources it compiled, so this list and the object
+ * files can never disagree.  Order is match order, and it is written down
+ * here rather than left to the linker. */
 static const mc_arch_desc_t *const g_backends[] = {
+#if MC_HAVE_ARCH_AMPERE
+    &mc_arch_ampere,
+#endif
+#if MC_HAVE_ARCH_ADA
+    &mc_arch_ada,
+#endif
+#if MC_HAVE_ARCH_HOPPER
     &mc_arch_hopper,
+#endif
+#if MC_HAVE_ARCH_BLACKWELL
+    &mc_arch_blackwell,
+#endif
 };
+
+_Static_assert(sizeof(g_backends) / sizeof(g_backends[0]) > 0,
+               "no architecture backends compiled in; check MC_ARCHS");
 #define N_BACKENDS (sizeof(g_backends) / sizeof(g_backends[0]))
 
 const mc_arch_desc_t *const *mc_arch_registry(size_t *out_count)

@@ -158,6 +158,27 @@ typedef struct {
                              mc_arch_role_t role, NvU32 selected_lce);
 } mc_arch_ops_t;
 
+/* ── Embedded device kernels ──────────────────────────────────────────────
+ *
+ * SASS is not portable across SM versions, so each architecture carries its
+ * own compiled bytes for each kernel.  A NULL `bytes` means this build has no
+ * cubin for that kernel on that architecture -- which is a normal state, not
+ * an error: it makes the features that need the kernel unavailable, and
+ * everything else still works.  That matters because generating a cubin needs
+ * nvcc and a toolkit that targets the SM version in question, which is not
+ * always to hand when a backend is first written.
+ */
+typedef struct {
+    const uint8_t *bytes;
+    uint32_t       len;
+    uint32_t       regs;   /* register count the QMD must request */
+} mc_kernel_blob_t;
+
+typedef struct {
+    mc_kernel_blob_t sm_owner;   /* SM authors an entire CE submission */
+    mc_kernel_blob_t doorbell;   /* one thread, one system-scope store  */
+} mc_arch_kernels_t;
+
 /* ── Compute (QMD) ────────────────────────────────────────────────────────
  *
  * The QMD is the structure SKED reads to launch a kernel, and its bit layout
@@ -217,9 +238,15 @@ struct mc_arch_desc {
 
     const mc_arch_ops_t     *ops;
     const mc_compute_ops_t  *compute;   /* NULL: no compute support */
+    mc_arch_kernels_t        kernels;
 };
 
-/* Backends define one of these.  Ops tables join it in a later step. */
+/* Compiled-in backends.  Each is declared unconditionally -- a declaration
+ * costs nothing -- while hal/registry.c decides membership from the
+ * MC_HAVE_ARCH_<NAME> defines the build passes for whatever MC_ARCHS names. */
+extern const mc_arch_desc_t mc_arch_ampere;
+extern const mc_arch_desc_t mc_arch_ada;
 extern const mc_arch_desc_t mc_arch_hopper;
+extern const mc_arch_desc_t mc_arch_blackwell;
 
 #endif /* MC_HAL_ARCH_H */
