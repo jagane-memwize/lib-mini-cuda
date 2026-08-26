@@ -274,10 +274,29 @@ bin/%: tests/mc/%.c $(MC_HELPERS) $(LIBMC) | bin
 # and USERD update out of order.  Failing the build is much cheaper than
 # discovering that as an intermittent hang.
 #
-# The mnemonics below are sm_90 spellings established by running
-# `cuobjdump --dump-sass` on real output.  A different -arch may spell them
-# differently; establish the replacements from a real run rather than
-# guessing, and record the evidence.
+# The mnemonics below were established by running `cuobjdump --dump-sass` on
+# real output rather than assumed.  Measured with CUDA 13.2 on 2026-08-26,
+# across every SM version libmc targets:
+#
+#            sm_80    sm_89    sm_90    sm_100
+#   sm_owner   STG.E.STRONG.SYS       18       18       18       18
+#              STG.E.64.STRONG.SYS     1        1        1        1
+#              LDG.E.STRONG.GPU        1        1        1        1
+#              MEMBAR.SC.SYS           6        6        6        6
+#              REG                    32       38       32        32
+#   doorbell   STG.E.STRONG.SYS        1        1        1         1
+#
+# So the spellings and the counts are the same everywhere, and the thresholds
+# below hold unchanged for every architecture -- which is why
+# KERNEL_ASSERTS_<kernel>_<arch> exists but is unused.  Two things follow.
+# First, sm_owner.cu is NOT sm_90-only: the system-scope store scope it
+# depends on lowers identically as far back as sm_80.  Second, the register
+# count is NOT constant -- Ada needs 38 where the others need 32 -- which is
+# why the QMD's register count comes from the per-architecture kernel blob
+# rather than a shared constant.
+#
+# A future toolkit may lower differently.  Re-measure rather than assume, and
+# update this table with what you saw.
 
 KERNELS := sm_owner doorbell
 
