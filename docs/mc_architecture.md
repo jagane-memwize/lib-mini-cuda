@@ -12,13 +12,13 @@ link to `libcuda` or `libcudart`. The current revision is tied to driver
 
 | Layer | Owner | libmc interaction |
 |---|---|---|
-| Public API | `mc/mc.h` | Contexts, allocations, VA lookup, and synchronous copies |
-| RM client | `mc/mc_rm.c` | Device, subdevice, VA-space, TSG, channel, engine, memory, mapping, and control objects |
-| UVM client | `mc/mc_uvm.c` | GPU and VA-space registration, external ranges, buffer mappings, and the primary channel |
-| Submission | `mc/mc_submit.c` | Copy methods, GPFIFO entries, USERD updates, doorbells, semaphores, and timeouts |
-| VA-space policy | `mc/mc_vaspace.c` | Paper-F1 identity pool and the two carrier VA spaces |
-| Compute | `mc/mc_compute_qmd.*`, `mc/mc_compute_demo.c` | Hopper QMD construction and compute-channel submission |
-| SM-authored copy | `mc/mc_sm_owner.c`, `mc/kernels/` | An SM thread authors work for a copy-engine channel |
+| Public API | `mc/include/mc/mc.h` | Contexts, allocations, VA lookup, and synchronous copies |
+| RM client | `mc/driver/rm.c` | Device, subdevice, VA-space, TSG, channel, engine, memory, mapping, and control objects |
+| UVM client | `mc/driver/uvm.c` | GPU and VA-space registration, external ranges, buffer mappings, and the primary channel |
+| Submission | `mc/hal/submit.c` | Copy methods, GPFIFO entries, USERD updates, doorbells, semaphores, and timeouts |
+| VA-space policy | `mc/core/vaspace.c` | Paper-F1 identity pool and the two carrier VA spaces |
+| Compute | `mc/arch/hopper/qmd_v04.*`, `mc/experimental/compute.c` | Hopper QMD construction and compute-channel submission |
+| SM-authored copy | `mc/experimental/sm_owner.c`, `mc/kernels/` | An SM thread authors work for a copy-engine channel |
 
 RM owns object creation and engine scheduling. UVM owns the external-range and
 primary-channel registration path. PBDMA fetches GPFIFO entries and method
@@ -75,7 +75,7 @@ A host-authored synchronous copy follows this chain:
 
 The bit-exact GPFIFO, method-header, USERD, and doorbell formats are documented
 in the research repository's [GPFIFO reference][gpfifo] and implemented with
-the relevant SDK macros in `mc_submit.c`.
+the relevant SDK macros in `hal/submit.c`.
 
 For `MC_XFER_SM`, a Hopper compute kernel writes the victim CE channel's
 pushbuffer, GPFIFO entry, USERD value, and BAR1 doorbell. The host still waits

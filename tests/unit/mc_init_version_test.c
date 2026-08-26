@@ -17,7 +17,7 @@
 #include "nv-ioctl.h"
 #include "nv-ioctl-numbers.h"
 
-#include "mc.h"
+#include <mc/mc.h>
 
 #define FAKE_CTL_FD 71
 

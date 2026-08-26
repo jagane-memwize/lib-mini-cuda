@@ -2,9 +2,9 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_sm_owner_args.h — shared layout for the sm_owner_kernel argument
+ * kernels/sm_owner_args.h — shared layout for the sm_owner_kernel argument
  * struct.  Included by both the device-side kernel (sm_owner.cu) and
- * the host-side glue (mc_sm_owner.c).
+ * the host-side glue (experimental/sm_owner.c).
  *
  * Why a struct instead of 11 individual kernel parameters: NVCC's
  * `extern "C" __global__` parameter packing is an implementation
@@ -25,7 +25,7 @@
  *     reading-order convenience (resources first, then workload,
  *     then control bookkeeping).
  *
- * Caller (mc_sm_owner.c) allocates an instance of this struct in
+ * Caller (experimental/sm_owner.c) allocates an instance of this struct in
  * carrier sysmem and passes its GPU VA to the kernel via a single
  * pointer parameter.  The kernel does LDG.E.64 / LDG.E for each
  * field through that pointer.
@@ -45,7 +45,7 @@
  * Requester ID into one address space (sysmem): the active sema cell
  * is always sysmem-resident for any FB-carrier MC_XFER_SM transfer
  * that touches sysmem on either side, and the host polls it.  See
- * mc_sm_owner.c::mc_sm_owner_submit for the routing rule.
+ * experimental/sm_owner.c::mc_sm_owner_submit for the routing rule.
  * The kernel uses this constant to size the GPFIFO entry's LENGTH
  * field; the host post-timeout diagnostic uses it to reconstruct the
  * GPFIFO entry it expected to see.  Both sides MUST agree. */

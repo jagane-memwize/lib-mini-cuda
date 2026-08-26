@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_vaspace.c — VA pool (process-global Paper-F1 anchor) + VA-space
+ * core/vaspace.c — VA pool (process-global Paper-F1 anchor) + VA-space
  * helpers (mc_va_space_*).
  *
  * The VA pool is a 4-GiB PROT_NONE anonymous reservation at
@@ -29,7 +29,11 @@
 
 #include "nvtypes.h"
 
-#include "mc_internal.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/rm.h"
+#include "internal/uvm.h"
+#include "internal/vaspace.h"
 /* ── VA pool (process-global) ──────────────────────────────────────────────
  *
  * libcuda strace shows an up-front `mmap(0x200000000, 4 GiB, PROT_NONE,

@@ -22,7 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "mc.h"
+#include <mc/mc.h>
 #include "mc_test_helpers.h"
 
 #define DEFAULT_TRANSFER_SIZE (256ULL * 1024ULL * 1024ULL)

@@ -2,10 +2,10 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_compute_qmd.c — NVK-style Hopper QMD V04 builder.
+ * arch/hopper/qmd_v04.c — NVK-style Hopper QMD V04 builder.
  *
  * Built from zero, mirroring Mesa NVK's `Qmd4_0` (qmd.rs:543-580) +
- * `fill_qmd` (qmd.rs:627-666).  See mc_compute_qmd.h for rationale.
+ * `fill_qmd` (qmd.rs:627-666).  See arch/hopper/qmd_v04.h for rationale.
  *
  * Bit-range references are named after the NVCBC0_QMDV04_00_* macros in
  * NVIDIA's clcbc0qmd.h.  That header does NOT ship in the open kernel
@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "mc_compute_qmd.h"
+#include "qmd_v04.h"
 
 /* ── Bit-range write helper ─────────────────────────────────────────
  * Writes `value` into the QMD at bits [hi:lo] inclusive (MW(hi:lo)

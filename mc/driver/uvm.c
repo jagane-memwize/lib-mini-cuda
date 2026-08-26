@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_uvm.c — UVM ioctl wrappers (UVM_INITIALIZE, UVM_REGISTER_GPU,
+ * driver/uvm.c — UVM ioctl wrappers (UVM_INITIALIZE, UVM_REGISTER_GPU,
  * UVM_REGISTER_GPU_VASPACE, UVM_REGISTER_CHANNEL, UVM_MAP_EXTERNAL_*,
  * UVM_UNREGISTER_*, UVM_FREE).
  *
@@ -38,7 +38,10 @@
 #include "nv_uvm_user_types.h"
 #include "ctrl/ctrl2080/ctrl2080gpu.h"
 
-#include "mc_internal.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/rm.h"
+#include "internal/uvm.h"
 
 /*
  * Fetch the 16-byte physical GPU UUID.  UVM_REGISTER_GPU requires it as

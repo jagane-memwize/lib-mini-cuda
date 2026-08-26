@@ -11,14 +11,14 @@
  * host side (write_gp_entry, ring_doorbell) is mirrored here in CUDA C /
  * inline PTX.  The method stream is the one exception: this kernel emits
  * the fused single-LAUNCH_DMA form (16 dwords) rather than the two-launch
- * form mc_submit.c now uses, because the store-count assertions on this
+ * form hal/submit.c now uses, because the store-count assertions on this
  * kernel's SASS are written against 16 pushbuffer dwords.  Only the
  * per-call workload payload (`src`, `dst`, `size`, `sema`) comes in
  * via kernel parameters; the structural authorship — opcodes,
  * subchannel routing, semaphore-release flags, LAUNCH_DMA flag word —
  * is in this file.
  *
- * Pre-conditions enforced by the host glue (mc_sm_owner.c):
+ * Pre-conditions enforced by the host glue (experimental/sm_owner.c):
  *   - The compute channel and the victim DMA channel share one carrier
  *     FERMI_VASPACE_A — MC_VAS_SYSMEM_CARRIER or MC_VAS_FB_CARRIER;
  *     this kernel is the author on both.  Every GPU VA below is
@@ -47,7 +47,7 @@
  *
  *     nvcc -arch=sm_90 --cubin -O2 sm_owner.cu -o sm_owner.cubin
  *     # then extract the .text._Z*sm_owner_kernel* section into
- *     # mc_sm_owner_sass.h as a static const uint8_t array.
+ *     # arch/hopper/sm_owner_sass.h as a static const uint8_t array.
  *
  * Verifying the compiler kept our STG.E.STRONG.SYS / membar.sys
  * choices:
@@ -58,11 +58,11 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 
-/* Shared host/device argument-struct layout.  See mc_sm_owner_args.h
+/* Shared host/device argument-struct layout.  See kernels/sm_owner_args.h
  * for the rationale (NVCC parameter-packing isn't an ABI guarantee;
  * a single struct-pointer parameter is).  The Makefile passes
- * `-I mc` to nvcc so this resolves to mc/mc_sm_owner_args.h. */
-#include "mc_sm_owner_args.h"
+ * `-I mc` to nvcc so this resolves to mc/kernels/sm_owner_args.h. */
+#include "kernels/sm_owner_args.h"
 
 /* ── NVC8B5 / NVC86F bit layouts mirrored from the SDK headers ──────────
  *
@@ -129,7 +129,7 @@ constexpr uint32_t HOPPER_DMA_COPY_A             = 0x0000C8B5;
  * It is the value Yan et al. report from an A40 trace.  Note H100 libcuda
  * does NOT emit it — a captured cudaMemcpy splits the work into
  * LAUNCH_DMA 0x182 (copy, no flush, no semaphore) followed by a
- * semaphore-only LAUNCH_DMA — which is what mc_submit.c mirrors on the
+ * semaphore-only LAUNCH_DMA — which is what hal/submit.c mirrors on the
  * host side.  Both forms are correct; this one is kept here because it
  * fits in 16 dwords. */
 constexpr uint32_t LAUNCH_DMA_FLAGS              = 0x0000018Eu;
@@ -165,7 +165,7 @@ constexpr uint32_t GPFIFO_ENTRY_MASK             = 511;
  * guarantee on its own, but visible at system scope (CPU / BAR1 /
  * other GPUs)."  Ordering between producer steps is provided by the
  * explicit `membar.sys` fences below — exactly mirroring the host's
- * "WC store + _mm_sfence" discipline in mc_submit.c.
+ * "WC store + _mm_sfence" discipline in hal/submit.c.
  *
  * Why not `st.release.sys`?  Release-on-each-store would make every
  * STG a fence in itself, which is heavier than needed and obscures
@@ -239,7 +239,7 @@ void membar_sys()
  * NVCC's first kernel-parameter slot (CB0[0x210] on observed CUDA
  * 13.x).  The kernel reads each field via LDG.E.64 / LDG.E through
  * that pointer.  The struct lives in carrier sysmem, allocated and
- * patched by the host glue (mc_sm_owner.c).  See mc_sm_owner_args.h
+ * patched by the host glue (experimental/sm_owner.c).  See kernels/sm_owner_args.h
  * for the layout and the rationale (NVCC's per-parameter offset
  * table isn't an ABI; C struct offsets are).
  */
@@ -274,7 +274,7 @@ void sm_owner_kernel(struct mc_sm_owner_args *args)
 
     /* ── Build the NVC8B5 method stream ─────────────────────────────
      *
-     * Same method groups as mc_submit.c::mc_write_transfer_methods, but
+     * Same method groups as hal/submit.c::mc_write_transfer_methods, but
      * fused into a single LAUNCH_DMA (see above), so 16 dwords rather
      * than that function's 18:
      * SET_OBJECT (2) + OFFSET_IN_UPPER (3) + OFFSET_OUT_UPPER (3) +
@@ -389,7 +389,7 @@ void sm_owner_kernel(struct mc_sm_owner_args *args)
      * which then forwards to PBDMA.
      *
      * On Hopper, both writes (USERD GPPut and BAR1 doorbell) are
-     * mandatory and ordered.  See ring_doorbell() in mc_submit.c.
+     * mandatory and ordered.  See ring_doorbell() in hal/submit.c.
      */
     constexpr uint32_t VF_DOORBELL_OFFSET = 0x90;
     uint32_t *dbell_ptr = reinterpret_cast<uint32_t *>(
@@ -406,7 +406,7 @@ void sm_owner_kernel(struct mc_sm_owner_args *args)
      * Gated on dma_sema_poll_va != 0.  The host always passes 0 today
      * — the active sema cell for every supported (carrier, direction)
      * tuple is sysmem-resident and the host polls it directly after
-     * the compute report sema fires (see mc_sm_owner.c).  This loop
+     * the compute report sema fires (see experimental/sm_owner.c).  This loop
      * is kept as a hook for a future HBM-resident sema path where
      * keeping the spin-wait on-GPU would matter.  Per-iteration
      * `__threadfence_system();` + `ld.global.cg` so NVCC neither

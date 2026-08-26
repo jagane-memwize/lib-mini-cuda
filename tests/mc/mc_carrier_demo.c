@@ -61,7 +61,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "mc.h"
+#include <mc/mc.h>
 #include "mc_test_helpers.h"
 
 #define DEFAULT_SIZE (1ULL * 1024ULL * 1024ULL) /* 1 MiB */

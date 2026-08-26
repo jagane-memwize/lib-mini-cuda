@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "mc.h"
+#include <mc/mc.h>
 
 int main(void)
 {

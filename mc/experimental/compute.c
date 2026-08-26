@@ -2,19 +2,19 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_compute_demo.c — demo-specific compute-kernel launch path.
+ * experimental/compute.c — demo-specific compute-kernel launch path.
  *
  * Hand-rolled SM-thread launch of mc_doorbell_kernel
  * (`*dst = token`) plus the chain-of-evidence variant that uses it
  * to ring primary's BAR1 doorbell.  These are bound tightly to one
  * specific embedded SASS (1×1×1 grid, hard-coded register count,
- * fixed CB0 layout) — they live here rather than in mc_core.c so
+ * fixed CB0 layout) — they live here rather than in core/core.c so
  * the channel-management library stays general and the kernel-launch
  * code can grow independently.
  *
- * Library-internal: includes mc_internal.h.  Compiled into
- * libmc.so alongside the other library TUs (mc_core.c, mc_rm.c,
- * mc_uvm.c, mc_submit.c, mc_vaspace.c, mc_compute_qmd.c); not
+ * Library-internal: includes mc/internal/*.h.  Compiled into
+ * libmc.so alongside the other library TUs (core/core.c, driver/rm.c,
+ * driver/uvm.c, hal/submit.c, core/vaspace.c, arch/hopper/qmd_v04.c); not
  * exposed as a separate public surface.
  */
 
@@ -34,12 +34,17 @@
 #include "class/clb1c0.h"        /* INVALIDATE_SKED_CACHES */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COMPUTE */
 
-#include "mc_internal.h"
-#include "mc_compute_qmd.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/rm.h"
+#include "internal/submit.h"
+#include "internal/vaspace.h"
+#include "internal/compute.h"
+#include "arch/hopper/qmd_v04.h"
 
 /*
  * Method-stream header for the compute subchannel.  Same encoding
- * as the CE-side INCR_HEADER_SUB in mc_submit.c, but pinned to
+ * as the CE-side INCR_HEADER_SUB in hal/submit.c, but pinned to
  * NVA06F_SUBCHANNEL_COMPUTE (= 1) instead of COPY_ENGINE (= 4).
  * Macros are file-scoped so duplication is harmless.
  */
@@ -163,7 +168,7 @@ mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
 
   /* Build the QMD from a zero-initialized buffer NVK-style: only
    * the fields `nak::qmd::Qmd4_0::fill_qmd` sets.  See
-   * mc_compute_qmd.h for the setter list.  Single-thread (1,1,1)
+   * arch/hopper/qmd_v04.h for the setter list.  Single-thread (1,1,1)
    * grid; 8 GPRs (SASS uses up to R5); no SLM/SMEM/barriers.  CB0
    * binds the kernel argument tuple. */
   mc_qmd_init(mod->qmd_cpu);

@@ -5,7 +5,7 @@
  * libmc.map — linker version script defining the exported ABI.
  *
  * This is the link-time half of the export contract; the compile-time half is
- * -fvisibility=hidden plus MC_API in mc/mc.h.  The two must list the same
+ * -fvisibility=hidden plus MC_API in mc/include/mc/mc.h.  The two must list the same
  * symbols.  Belt and braces is deliberate: visibility alone is easy to lose
  * (a missing MC_API silently un-exports), and a version script alone still
  * lets every internal symbol into the dynamic symbol table of intermediate

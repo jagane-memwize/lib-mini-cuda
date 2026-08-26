@@ -15,7 +15,7 @@
 #include "nv-ioctl.h"
 #include "nv-ioctl-numbers.h"
 
-#include "mc_internal.h"
+#include "internal/rm.h"
 
 typedef enum
 {

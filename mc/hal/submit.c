@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_submit.c — method stream + GPFIFO entry builders + channel
+ * hal/submit.c — method stream + GPFIFO entry builders + channel
  * submission primitives.
  *
  * Pure-ish: no fds opened, no handles allocated.  Inputs are
@@ -25,7 +25,9 @@
 #include "class/clc36f.h"        /* NVC36F_DMA_INCR_* method headers */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COPY_ENGINE */
 
-#include "mc_internal.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/submit.h"
 
 /*
  * Kepler-style method header.  One 32-bit word that describes the payload

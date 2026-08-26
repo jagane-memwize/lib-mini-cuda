@@ -2,17 +2,17 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_core.c — libmc lifecycle layer.  Owns the per-kind channel
+ * core/core.c — libmc lifecycle layer.  Owns the per-kind channel
  * init/fini routines, mc_init/mc_fini, the allocation table,
  * mc_malloc_device, mc_malloc_host, mc_free, mc_memcpy/d2h,
  * and the two CE-doorbell demos (mc_dbell_demo_ring,
  * mc_memcpy_gpu_doorbell_ce).
  *
  * The underlying machinery lives in sibling TUs:
- *   mc_rm.c       RM ioctl wrappers + typed object allocators
- *   mc_uvm.c      UVM ioctl wrappers
- *   mc_submit.c   method-stream builders + channel submit primitives
- *   mc_vaspace.c  VA pool + mc_va_space_* helpers
+ *   driver/rm.c       RM ioctl wrappers + typed object allocators
+ *   driver/uvm.c      UVM ioctl wrappers
+ *   hal/submit.c   method-stream builders + channel submit primitives
+ *   core/vaspace.c  VA pool + mc_va_space_* helpers
  *
  * Paper-F1 invariant: every allocation with a CPU alias is anchored
  * into the VA pool so CPU VA == GPU VA.  Enforced by mc_malloc_host
@@ -39,16 +39,22 @@
 #include "class/cla06fsubch.h"          /* NVA06F_SUBCHANNEL_COPY_ENGINE / _COMPUTE */
 #include "class/cl2080_notification.h"  /* NV2080_ENGINE_TYPE_GR0 (needs nvtypes.h above) */
 #include "ctrl/ctrlc36f.h"              /* NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN */
-#include "mc_compute_qmd.h"             /* mc_doorbell_kernel_sass — staged once
+#include "arch/hopper/qmd_v04.h"             /* mc_doorbell_kernel_sass — staged once
                                          * at compute-channel init */
-#include "mc_sm_owner_sass.h"           /* mc_sm_owner_kernel_sass — second
+#include "arch/hopper/sm_owner_sass.h"           /* mc_sm_owner_kernel_sass — second
                                          * embedded kernel; the SM thread
                                          * authors the entire CE-channel
                                          * submission (PB+GPFIFO+USERD+
                                          * doorbell) instead of just the
                                          * doorbell write. */
 
-#include "mc_internal.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/rm.h"
+#include "internal/uvm.h"
+#include "internal/submit.h"
+#include "internal/vaspace.h"
+#include "internal/compute.h"
 
 /* mc_memcpy casts size_t n to uint32_t for the method
  * stream and the SM-owner CB0.  The size gate above each cast is
@@ -325,7 +331,7 @@ static int mc_channel_alloc_via_carrier(mc_ctx_t *ctx, mc_channel_t *ch)
    * MWr from the same channel — so the host polling this cell is a
    * valid completion observable.  The HBM cell allocated above
    * remains for diagnostic dumps but isn't on the success path.
-   * See mc_sm_owner.c::mc_sm_owner_submit for the unified routing. */
+   * See experimental/sm_owner.c::mc_sm_owner_submit for the unified routing. */
   if (vas->kind == MC_VAS_KIND_CARRIER_FB
       && ch->role == MC_ROLE_SM_VICTIM_DMA)
   {

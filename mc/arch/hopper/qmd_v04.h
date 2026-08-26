@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_compute_qmd.h — Hopper QMD V04 builder for mc's
+ * arch/hopper/qmd_v04.h — Hopper QMD V04 builder for mc's
  * compute-doorbell-write kernel.
  *
  * Built from zero, NVK-style.  See Mesa NVK

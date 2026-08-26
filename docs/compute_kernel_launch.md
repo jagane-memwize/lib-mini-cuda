@@ -3,7 +3,7 @@
 libmc can submit a small Hopper kernel without `libcuda`. This document keeps
 the end-to-end chain, operational constraints, and experimental evidence in
 one place. The exact QMD fields and method words are documented beside their
-builders in `mc_compute_qmd.{c,h}` and `mc_compute_demo.c`.
+builders in `arch/hopper/qmd_v04.{c,h}` and `experimental/compute.c`.
 
 ## What the path proves
 
@@ -39,7 +39,7 @@ execution remain hardware/firmware responsibilities.
 
 The implementation uses Hopper QMD V04. Its field locations are derived from
 Mesa NVK's generated QMD definitions and checked against NVIDIA class headers
-where available. `mc_compute_qmd.c` centralizes the multiword bit setters and
+where available. `arch/hopper/qmd_v04.c` centralizes the multiword bit setters and
 records why each nonzero field is required.
 
 The embedded kernels deliberately use a very small ABI:
@@ -137,9 +137,9 @@ changing the QMD or ordering rules.
 
 ## Source navigation
 
-- `mc/mc_compute_qmd.{c,h}` — QMD V04 and CB0 construction.
-- `mc/mc_compute_demo.c` — compute-channel setup and host-authored launch.
-- `mc/mc_sm_owner.c` — host glue for the SM-authored CE path.
+- `mc/arch/hopper/qmd_v04.{c,h}` — QMD V04 and CB0 construction.
+- `mc/experimental/compute.c` — compute-channel setup and host-authored launch.
+- `mc/experimental/sm_owner.c` — host glue for the SM-authored CE path.
 - `mc/kernels/sm_owner.cu` — GPU-side command publication.
 - `tests/mc/mc_compute_dbell_demo.c` — scratch-write proof.
 - `tests/mc/mc_compute_dbell_chain_demo.c` — SM-to-doorbell chain.

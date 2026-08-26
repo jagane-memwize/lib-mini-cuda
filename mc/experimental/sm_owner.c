@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_sm_owner.c — host-side glue for the sm_owner_kernel SASS.
+ * experimental/sm_owner.c — host-side glue for the sm_owner_kernel SASS.
  *
  * sm_owner_kernel is the canonical, executable description of the
  * Hopper CE submission protocol: a single SM thread writes the
@@ -32,7 +32,7 @@
  *
  * CB0 parameter offsets are NVCC-determined, starting at 0x210.  If
  * sm_owner.cu's parameter list is reordered, regenerate the header
- * (`make mc/mc_sm_owner_sass.h`) and update the offsets below by
+ * (`make mc/arch/hopper/sm_owner_sass.h`) and update the offsets below by
  * inspecting `cuobjdump --dump-sass mc/kernels/sm_owner.cubin`.
  */
 
@@ -55,10 +55,15 @@
 #include "class/clb1c0.h"        /* INVALIDATE_SKED_CACHES */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COMPUTE */
 
-#include "mc_internal.h"
-#include "mc_compute_qmd.h"
-#include "mc_sm_owner_args.h"
-#include "mc_sm_owner_sass.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/rm.h"
+#include "internal/submit.h"
+#include "internal/vaspace.h"
+#include "internal/compute.h"
+#include "arch/hopper/qmd_v04.h"
+#include "kernels/sm_owner_args.h"
+#include "arch/hopper/sm_owner_sass.h"
 
 /* ── struct mc_sm_owner_args host/device ABI guards ────────────────────
  *
@@ -71,7 +76,7 @@
  * compile-time asserts — these trip on the host build (which is
  * the only side that includes this header through C, not C++), so
  * a divergent NVCC build would surface as a host-side mismatch
- * the next time someone ran `make mc/mc_sm_owner_sass.h`.
+ * the next time someone ran `make mc/arch/hopper/sm_owner_sass.h`.
  *
  * Total size: 8 u64 (64 bytes) + 6 u32 (24 bytes) = 88 bytes.  No
  * tail padding (struct alignment is 8, last field at offset 84
@@ -100,7 +105,7 @@ _Static_assert(offsetof(struct mc_sm_owner_args, dma_sema_poll_budget)   == 84,
 /* ── CB0 layout for sm_owner_kernel ─────────────────────────────────────
  *
  * The kernel takes a single `struct mc_sm_owner_args *` parameter
- * (see mc_sm_owner_args.h).  NVCC packs that pointer at the start of
+ * (see kernels/sm_owner_args.h).  NVCC packs that pointer at the start of
  * CB0's kernel-parameter band, byte 0x210 on observed CUDA 13.x
  * (the system-reserved band ends there).  We patch a single u64
  * (the args struct GPU VA) at that offset; the kernel does
@@ -133,7 +138,7 @@ _Static_assert(offsetof(struct mc_sm_owner_args, dma_sema_poll_budget)   == 84,
 #define MC_SMO_OFF_ARGS_PTR            0x210u
 #define MC_SMO_ARGS_CB0_OFFSET         0x300u
 
-/* ── Compute pushbuffer header macro (mirrors mc_compute_demo.c) ──────── */
+/* ── Compute pushbuffer header macro (mirrors experimental/compute.c) ──────── */
 #define INCR_HEADER_COMPUTE(method, count)                 \
   (DRF_DEF(C36F, _DMA_INCR, _OPCODE, _VALUE)               \
    | DRF_NUM(C36F, _DMA_INCR, _COUNT, (count))             \
@@ -143,7 +148,7 @@ _Static_assert(offsetof(struct mc_sm_owner_args, dma_sema_poll_budget)   == 84,
 
 /* ── Per-channel one-time compute setup methods ─────────────────────────
  *
- * Same recipe as mc_write_compute_setup_methods in mc_compute_demo.c.
+ * Same recipe as mc_write_compute_setup_methods in experimental/compute.c.
  * Duplicated here (rather than exposed across TUs) because both files
  * are tightly coupled to their kernel-launch pattern and the setup is
  * <30 lines.  Both call sites share the `setup_done` flag in
@@ -214,7 +219,7 @@ static uint32_t *write_compute_launch_methods(uint32_t *pb,
 
   *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SEND_SIGNALING_PCAS2_B, 1);
   *pb++ = 0x0000000a;                /* SCHEDULE | <bit 3>; verified working
-                                      * — same value mc_compute_demo.c uses. */
+                                      * — same value experimental/compute.c uses. */
 
   *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_REPORT_SEMAPHORE_A, 4);
   *pb++ = DRF_NUM(C7C0, _SET_REPORT_SEMAPHORE_A, _OFFSET_UPPER,
@@ -290,7 +295,7 @@ static void patch_cb0(uint8_t                       *cb0,
  *     bytes and localise where the kernel encoding went wrong).
  *
  * Reads dma_ch->userd->GPPut/GPGet through volatile-qualified
- * pointers (declared in mc_internal.h::mc_channel_t).  No state is
+ * pointers (declared in mc/internal/*.h::mc_channel_t).  No state is
  * modified; this is read-only diagnostics. */
 static void dump_dma_timeout_diag(const mc_channel_t *dma_ch)
 {
@@ -560,7 +565,7 @@ mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
   rc = mc_channel_poll_sema(active_sema_ptr, dma_ch->sema_payload, t0);
   if (rc == MC_OK)
   {
-    /* GPPut wraps modulo MC_GPFIFO_ENTRIES; see mc_submit.c. */
+    /* GPPut wraps modulo MC_GPFIFO_ENTRIES; see hal/submit.c. */
     dma_ch->gp_put = (dma_ch->gp_put + 1) % MC_GPFIFO_ENTRIES;
   }
   else

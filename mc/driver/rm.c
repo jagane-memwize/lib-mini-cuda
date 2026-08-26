@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
  * SPDX-License-Identifier: MIT
  *
- * mc_rm.c — RM ioctl wrappers (NV_ESC_RM_ALLOC / FREE / CONTROL /
+ * driver/rm.c — RM ioctl wrappers (NV_ESC_RM_ALLOC / FREE / CONTROL /
  * MAP_MEMORY / MAP_MEMORY_DMA / REGISTER_FD).
  *
  * Two layers:
@@ -14,7 +14,7 @@
  *      the fields and invariants that matter for one RM class each.
  *
  * Also hosts mc_debug() — the verbose-logging gate used by the log
- * macros in mc_internal.h.  Defined here because mc_rm.c is always
+ * macros in mc/internal/*.h.  Defined here because driver/rm.c is always
  * part of the libmc.so link.
  */
 
@@ -57,7 +57,9 @@
 #include "ctrl/ctrla06f/ctrla06fgpfifo.h"
 #include "ctrl/ctrl2080/ctrl2080gpu.h"
 
-#include "mc_internal.h"
+#include "internal/types.h"
+#include "internal/log.h"
+#include "internal/rm.h"
 
 /* ── Logging gate ─────────────────────────────────────────────────────────
  * Library logging is stderr-only, uncoloured, and prefixed "[mc]".

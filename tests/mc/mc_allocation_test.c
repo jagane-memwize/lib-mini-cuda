@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "mc.h"
+#include <mc/mc.h>
 #include "mc_test_helpers.h"
 
 typedef struct

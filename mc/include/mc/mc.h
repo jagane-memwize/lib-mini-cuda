@@ -35,7 +35,7 @@ extern "C" {
  * time; the two must agree.  Consumers compiling against this header get a
  * plain declaration.
  *
- * Everything declared in mc_internal.h is deliberately NOT exported: those
+ * Everything declared in mc/internal/*.h is deliberately NOT exported: those
  * are cross-TU helpers whose names (rm_*, uvm_*, write_gp_entry, ...) are
  * generic enough to collide once multiple architecture backends are linked
  * into the same object. */
@@ -127,7 +127,7 @@ typedef enum {
  *                            waiting on.  Same CPU/GPU-VA contract as
  *                            MC_VAS_SYSMEM_CARRIER for user buffers.
  *
- * This is the canonical VAS identifier; mc_internal.h uses it directly
+ * This is the canonical VAS identifier; mc/internal/*.h uses it directly
  * (no internal alias type). */
 typedef enum {
     MC_VAS_UVM             = 0,

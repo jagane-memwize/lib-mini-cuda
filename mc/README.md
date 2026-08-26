@@ -162,7 +162,7 @@ doc-comment in `mc.h`.
 ## Minimal user program
 
 ```c
-#include "mc.h"
+#include <mc/mc.h>
 #include <string.h>
 
 int main(void) {
@@ -189,7 +189,7 @@ Build into `bin/` so the same relative runtime path as the repository's test
 binaries applies:
 
 ```sh
-cc -Imc myapp.c -Llib -lmc -Wl,-rpath,'$ORIGIN/../lib' -o bin/myapp
+cc -Imc/include myapp.c -Llib -lmc -Wl,-rpath,'$ORIGIN/../lib' -o bin/myapp
 ```
 Initialize the pinned official driver-source submodule, then from the repository
 root run `make libmc` or `make mc_demo` (see
@@ -241,32 +241,58 @@ FB-carrier path) and `tests/mc/mc_sm_owner_demo.c`.
 ## Reference — source layout
 
 The library is split into eight translation units plus the embedded
-SM-owner kernel.  Every `.c` includes `mc_internal.h`, which declares
-the cross-TU helper API + log macros.
+SM-owner kernel, grouped by layer:
+
+```
+mc/
+  include/mc/mc.h   public API — the only header consumers include
+  internal/         private headers, one per concern
+  core/             architecture-neutral lifecycle and VA-space policy
+  driver/           RM and UVM ioctl surfaces
+  hal/              method streams and submission primitives
+  arch/<name>/      per-architecture code (today: hopper)
+  experimental/     research paths
+  kernels/          device-side sources
+```
+
+There are two include roots: `-Imc/include` exposes only `<mc/mc.h>`, and
+`-Imc` is the library-internal root.  A translation unit therefore writes
+`#include "internal/types.h"` or `#include "arch/hopper/qmd_v04.h"`, so the
+layer it reaches into is visible at the include site.  Consumers are given
+the public root alone and never see `internal/`.
 
 **Public surface:**
 
-- `mc.h` — the whole public API.
-- `mc_internal.h` — internal types (`mc_channel_t`, `mc_va_space_t`,
-  `mc_alloc_t`, per-kind extras union) + cross-TU prototypes + log
-  macros + `CHECK`.  Public consumers do not include this.
+- `include/mc/mc.h` — the whole public API.  Fifteen functions, all marked
+  `MC_API`; everything else is hidden by `-fvisibility=hidden` and the
+  `mc/libmc.map` version script.  `make check-abi` verifies the two agree.
+
+**Private headers** (`internal/`) — each TU includes the ones it uses rather
+than a single umbrella:
+
+- `types.h` — the data model: `MC_*` constants, `mc_channel_t`,
+  `mc_va_space_t`, `mc_alloc_t`, the per-kind extras union, `struct mc_ctx`.
+- `log.h` — `DEBUG_LOG` / `WARN_LOG` / `ERROR_LOG` and `CHECK`.
+- `rm.h`, `uvm.h` — the driver-wrapper prototypes.
+- `submit.h`, `vaspace.h`, `compute.h` — the prototypes for `hal/submit.c`,
+  `core/vaspace.c`, and the SM-authored helper.
 
 **Library translation units:**
 
-- `mc_rm.c` — RM ioctl wrappers (root/device/subdevice/usermode/tsg/
+- `driver/rm.c` — RM ioctl wrappers (root/device/subdevice/usermode/tsg/
   channel/ce/compute object allocators; `rm_alloc_vidmem`,
   `rm_alloc_sysmem_at`, `rm_alloc_vaspace*`, `rm_alloc_virtual_memory`,
   `rm_map_memory*`, `rm_control`, `pick_non_grce_lce`,
   `rm_gpfifo_schedule`, `rm_channel_disable`).  Also hosts
   `mc_debug()`.
-- `mc_uvm.c` — UVM ioctl wrappers (`uvm_setup`,
+- `driver/uvm.c` — UVM ioctl wrappers (`uvm_setup`,
   `uvm_register_channel`, `uvm_map_buffer*`, `uvm_unmap_buffer`,
   `uvm_unregister_*`).
-- `mc_submit.c` — method-stream + GPFIFO entry builders
+- `hal/submit.c` — method-stream + GPFIFO entry builders
   (`mc_write_transfer_methods`, `write_gp_entry`, `ring_doorbell`) +
   channel submission primitives (`mc_channel_arm/submit/poll_sema`) +
   `drain_channel`.  No fds or RM handles opened here.
-- `mc_vaspace.c` — VA pool (`va_pool_init`, `va_pool_reserve`) +
+- `core/vaspace.c` — VA pool (`va_pool_init`, `va_pool_reserve`) +
   carrier VA space helpers (`mc_va_space_init_uvm`,
   `mc_va_space_init_carrier`, `mc_va_space_init_carrier_fb`,
   `mc_va_space_dma_map_resource` (allocates a fresh
@@ -277,19 +303,19 @@ the cross-TU helper API + log macros.
   `mc_va_space_install_doorbell_pte`,
   `mc_va_space_alloc_scratch`, `mc_va_space_alloc_vidmem`,
   `mc_va_space_fini`).
-- `mc_core.c` — lifecycle: per-kind channel init/fini, `mc_init`,
+- `core/core.c` — lifecycle: per-kind channel init/fini, `mc_init`,
   `mc_fini`, the allocation table, `mc_malloc_*`, `mc_free`,
   `mc_gpu_va`, `mc_memcpy` (with VAS dispatch + agent dispatch),
   and the host-authored chain-of-evidence demos (`mc_dbell_demo_ring`,
   `mc_memcpy_gpu_doorbell_ce`).
-- `mc_compute_qmd.{c,h}` — Hopper QMD V04 builder + embedded SASS for
+- `arch/hopper/qmd_v04.{c,h}` — Hopper QMD V04 builder + embedded SASS for
   the simple `mc_doorbell_kernel`.
-- `mc_compute_demo.c` — HOPPER_COMPUTE_A demos
+- `experimental/compute.c` — HOPPER_COMPUTE_A demos
   (`mc_compute_doorbell_kernel`, `mc_memcpy_gpu_doorbell_sm`,
   `mc_compute_get_scratch`).  Builds the per-channel one-time setup
   pushbuffer (cache invalidates + shader-memory windows).
-- `mc_sm_owner.c` — SM-authored CE submission helper.  Library-internal
-  (declared in `mc_internal.h`); reached through the public API via
+- `experimental/sm_owner.c` — SM-authored CE submission helper.  Library-internal
+  (declared in `mc/internal/*.h`); reached through the public API via
   `mc_memcpy(..., MC_XFER_SM)`.  Wraps the embedded sm_owner kernel
   in a launch-and-poll path against the compute channel.
 
@@ -301,12 +327,12 @@ the cross-TU helper API + log macros.
   the GPFIFO entry / USERD GPPut / BAR1 doorbell are emitted as
   system-scope strong-ordered global stores.  Build-time assertion in
   the Makefile validates that the cubin contains ≥ 19 such stores.
-- `mc_sm_owner_args.h` — shared host/device argument-struct layout.
+- `kernels/sm_owner_args.h` — shared host/device argument-struct layout.
   The kernel takes a single `struct mc_sm_owner_args *` parameter
   (insulates the host glue from NVCC parameter-packing details).
-- `mc_sm_owner_sass.h` — auto-generated by the Makefile from the cubin
+- `arch/hopper/sm_owner_sass.h` — auto-generated by the Makefile from the cubin
   produced by `nvcc -arch=sm_90`.  Committed so a fresh checkout builds
-  without `nvcc`; regenerated by `make mc/mc_sm_owner_sass.h`.
+  without `nvcc`; regenerated by `make mc/arch/hopper/sm_owner_sass.h`.
 
 **Reference / cross-check:**
 

@@ -40,7 +40,12 @@ sudo ./bin/mc_demo
 
 ## Layout
 
-- `mc/` — public header and library implementation
+- `mc/include/mc/mc.h` — the public header; the only one consumers include
+- `mc/` — library implementation, grouped by layer: `core/` (lifecycle and
+  VA-space policy), `driver/` (RM and UVM ioctl surfaces), `hal/` (method
+  streams and submission), `arch/<name>/` (per-architecture code),
+  `experimental/` (research paths), `internal/` (private headers),
+  `kernels/` (device-side sources)
 - `tests/mc/` — integration demos and benchmarks
 - `tests/unit/` — host-only ABI and selection tests
 - `tools/run_mc_tests.py` — integration-test matrix runner

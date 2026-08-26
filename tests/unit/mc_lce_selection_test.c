@@ -7,6 +7,7 @@
  */
 
 #include <stdarg.h>
+#include <stdint.h>         /* uintptr_t — used to stage the caps table */
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -17,7 +18,8 @@
 #include "class/cl2080_notification.h"
 #include "ctrl/ctrl2080/ctrl2080ce.h"
 
-#include "mc_internal.h"
+#include "internal/log.h"
+#include "internal/rm.h"
 
 static NV2080_CTRL_CE_GET_ALL_CAPS_PARAMS mock_caps;
 static int failures;
