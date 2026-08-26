@@ -1,0 +1,49 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.
+ * SPDX-License-Identifier: MIT
+ *
+ * libmc.map — linker version script defining the exported ABI.
+ *
+ * This is the link-time half of the export contract; the compile-time half is
+ * -fvisibility=hidden plus MC_API in mc/mc.h.  The two must list the same
+ * symbols.  Belt and braces is deliberate: visibility alone is easy to lose
+ * (a missing MC_API silently un-exports), and a version script alone still
+ * lets every internal symbol into the dynamic symbol table of intermediate
+ * objects.
+ *
+ * `local: *` is what keeps the ~45 cross-TU helpers (rm_*, uvm_*,
+ * write_gp_entry, drain_channel, mc_va_space_*, ...) out of the public ABI.
+ * That matters increasingly as architecture backends land: several will carry
+ * similarly-named helpers, and only file-scope discipline plus this script
+ * keeps them from colliding.
+ */
+MC_1.0 {
+  global:
+    /* Lifecycle */
+    mc_init;
+    mc_fini;
+
+    /* Allocation and lookup */
+    mc_malloc_device;
+    mc_malloc_host;
+    mc_malloc_host_wc;
+    mc_host_register;
+    mc_host_unregister;
+    mc_free;
+    mc_gpu_va;
+
+    /* Transfer */
+    mc_memcpy;
+
+    /* Research / experimental entrypoints.  These move behind
+     * MC_ENABLE_EXPERIMENTAL and into mc_experimental.h later; when they do,
+     * this block becomes conditional and these names leave the stable set. */
+    mc_dbell_demo_ring;
+    mc_memcpy_gpu_doorbell_ce;
+    mc_memcpy_gpu_doorbell_sm;
+    mc_compute_doorbell_kernel;
+    mc_compute_get_scratch;
+
+  local:
+    *;
+};

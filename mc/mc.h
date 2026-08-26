@@ -29,6 +29,22 @@
 extern "C" {
 #endif
 
+/* Export marker for the public ABI.  The library is compiled with
+ * -fvisibility=hidden, so every symbol is library-private unless it carries
+ * MC_API.  A version script (mc/libmc.map) enforces the same set at link
+ * time; the two must agree.  Consumers compiling against this header get a
+ * plain declaration.
+ *
+ * Everything declared in mc_internal.h is deliberately NOT exported: those
+ * are cross-TU helpers whose names (rm_*, uvm_*, write_gp_entry, ...) are
+ * generic enough to collide once multiple architecture backends are linked
+ * into the same object. */
+#if defined(MC_BUILDING_LIBMC) && defined(__GNUC__)
+#  define MC_API __attribute__((visibility("default")))
+#else
+#  define MC_API
+#endif
+
 typedef struct mc_ctx mc_ctx_t;
 
 typedef enum {
@@ -126,11 +142,11 @@ typedef enum {
  * the UVM, DMA, and compute channels.  Returns MC_OK on success and stores an
  * opaque context pointer in *out_ctx.  On failure returns a status code
  * (details go to stderr) and *out_ctx is left NULL. */
-mc_status_t mc_init(mc_ctx_t **out_ctx);
+MC_API mc_status_t mc_init(mc_ctx_t **out_ctx);
 
 /* Strict-LIFO teardown: drain channel, unregister from UVM, munmap, rm_free
  * all handles, close fds, free mc_ctx_t.  Safe against NULL. */
-void mc_fini(mc_ctx_t *ctx);
+MC_API void mc_fini(mc_ctx_t *ctx);
 
 /* Allocate HBM (vidmem) with NO CPU alias, mapped into `vas`.  Returned
  * pointer is a GPU VA cast to void*; do NOT dereference from the CPU.
@@ -141,7 +157,7 @@ void mc_fini(mc_ctx_t *ctx);
  *                    each per-resource NV50_MEMORY_VIRTUAL carrier
  *                    DMA-maps the source `hMemory` with
  *                    `dmaOffset = 0`; RM picks the GPU VA. */
-void *mc_malloc_device(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
+MC_API void *mc_malloc_device(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
 
 /* Allocate host memory mapped into `vas`.  Returned pointer is the CPU
  * VA, usable for direct CPU dereference.  Returns NULL on failure.
@@ -183,7 +199,7 @@ void *mc_malloc_device(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
  * does read (pushbuffer, GPFIFO, USERD, semaphores, CB0) is library-
  * owned write-combined memory whose visibility the library's own
  * SFENCE discipline guarantees; callers never touch it. */
-void *mc_malloc_host(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
+MC_API void *mc_malloc_host(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
 
 /* Write-combined variant of mc_malloc_host — the analogue of
  * cudaHostAllocWriteCombined, for buffers the CPU only WRITES (H2D
@@ -202,7 +218,7 @@ void *mc_malloc_host(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
  * when the host never reads the buffer back; a single accidental read
  * loop costs more than the DMA gain saves.  mc_memcpy treats both
  * variants identically. */
-void *mc_malloc_host_wc(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
+MC_API void *mc_malloc_host_wc(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
 
 /* Register an existing malloc/mmap-backed host range into mc's
  * allocation table, analogous to cudaHostRegister(ptr, n, 0).
@@ -216,15 +232,15 @@ void *mc_malloc_host_wc(mc_ctx_t *ctx, size_t n, mc_vas_t vas);
  * After MC_OK, pass `ptr` to mc_memcpy just like a pointer returned by
  * mc_malloc_host.  The caller still owns the storage and must free(3) it only
  * after mc_host_unregister has returned. */
-mc_status_t mc_host_register(mc_ctx_t *ctx, void *ptr, size_t n, mc_vas_t vas);
+MC_API mc_status_t mc_host_register(mc_ctx_t *ctx, void *ptr, size_t n, mc_vas_t vas);
 
 /* Unregister a pointer previously passed to mc_host_register.  No-op on NULL;
  * returns MC_EINVAL for unknown pointers or pointers owned by mc_malloc_*.
  * Does not free(3) or munmap(2) the user's storage. */
-mc_status_t mc_host_unregister(mc_ctx_t *ctx, void *ptr);
+MC_API mc_status_t mc_host_unregister(mc_ctx_t *ctx, void *ptr);
 
 /* Free a pointer returned by either mc_malloc_*.  No-op on NULL. */
-void mc_free(mc_ctx_t *ctx, void *p);
+MC_API void mc_free(mc_ctx_t *ctx, void *p);
 
 /* Look up the GPU VA backing a pointer returned by mc_malloc_*.
  *
@@ -238,7 +254,7 @@ void mc_free(mc_ctx_t *ctx, void *p);
  *
  * Returns 0 if `user_ptr` was not returned by mc_malloc_* on this
  * context (unknown pointer). */
-uint64_t mc_gpu_va(mc_ctx_t *ctx, const void *user_ptr);
+MC_API uint64_t mc_gpu_va(mc_ctx_t *ctx, const void *user_ptr);
 
 /* Synchronous copy.  Both pointers must have been returned by
  * mc_malloc_* on this context, with matching VAS — otherwise returns
@@ -250,7 +266,7 @@ uint64_t mc_gpu_va(mc_ctx_t *ctx, const void *user_ptr);
  * `agent` selects who authors the submission to PBDMA.  See mc_xfer_t
  * for the trade-offs.  MC_XFER_SM additionally requires both pointers
  * in a carrier VAS (MC_VAS_SYSMEM_CARRIER or MC_VAS_FB_CARRIER). */
-mc_status_t mc_memcpy(mc_ctx_t *ctx, const void *dst, const void *src,
+MC_API mc_status_t mc_memcpy(mc_ctx_t *ctx, const void *dst, const void *src,
                       size_t n, mc_xfer_t agent);
 
 /* Doorbell-write demo: submit a CE LAUNCH_DMA on the DMA channel
@@ -277,7 +293,7 @@ mc_status_t mc_memcpy(mc_ctx_t *ctx, const void *dst, const void *src,
  * is issued by the GPU's Copy Engine, and an x86 debug register traps
  * only CPU accesses.  What proves the write happened is the demo's own
  * release semaphore. */
-mc_status_t mc_dbell_demo_ring(mc_ctx_t *ctx, uint32_t token);
+MC_API mc_status_t mc_dbell_demo_ring(mc_ctx_t *ctx, uint32_t token);
 
 /* End-to-end-verifiable copy whose UVM-channel doorbell ring is
  * issued by the GPU itself, not the host.  Direction is inferred from
@@ -324,7 +340,7 @@ mc_status_t mc_dbell_demo_ring(mc_ctx_t *ctx, uint32_t token);
  * Returns MC_OK on full chain success, MC_ETIMEOUT if either sema
  * doesn't fire within TIMEOUT_MS, MC_EINVAL on invalid inputs (NULL,
  * unknown pointers, mismatched VAS, non-UVM VAS, undersized buffer). */
-mc_status_t mc_memcpy_gpu_doorbell_ce(mc_ctx_t *ctx, void *dst,
+MC_API mc_status_t mc_memcpy_gpu_doorbell_ce(mc_ctx_t *ctx, void *dst,
                                       const void *src, size_t n);
 
 /* Submit a HOPPER_COMPUTE_A kernel launch on the compute channel
@@ -354,7 +370,7 @@ mc_status_t mc_memcpy_gpu_doorbell_ce(mc_ctx_t *ctx, void *dst,
  * pushbuffer (SET_OBJECT(HOPPER_COMPUTE_A), cache invalidates,
  * SHADER_*_MEMORY_WINDOW), built NVK-style — see
  * mc_write_compute_setup_methods.  Subsequent calls skip the setup. */
-mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
+MC_API mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
                                        uint32_t token);
 
 /* Expose a small, GPU-MMU-mapped scratch dword that lives in the
@@ -370,7 +386,7 @@ mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
  * middle of the region, so callers can also write a few sentinel
  * dwords on either side of the target without touching unrelated
  * memory. */
-mc_status_t mc_compute_get_scratch(mc_ctx_t *ctx, volatile uint32_t **cpu_ptr,
+MC_API mc_status_t mc_compute_get_scratch(mc_ctx_t *ctx, volatile uint32_t **cpu_ptr,
                                    uint64_t *gpu_va);
 
 /* End-to-end-verifiable copy whose UVM-channel doorbell is rung by
@@ -411,7 +427,7 @@ mc_status_t mc_compute_get_scratch(mc_ctx_t *ctx, volatile uint32_t **cpu_ptr,
  *
  * Returns MC_OK on full chain success, MC_ETIMEOUT if either sema
  * doesn't fire within MC_TIMEOUT_MS, MC_EINVAL on invalid inputs. */
-mc_status_t mc_memcpy_gpu_doorbell_sm(mc_ctx_t *ctx, void *dst,
+MC_API mc_status_t mc_memcpy_gpu_doorbell_sm(mc_ctx_t *ctx, void *dst,
                                       const void *src, size_t n);
 
 #ifdef __cplusplus

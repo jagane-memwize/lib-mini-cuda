@@ -77,11 +77,48 @@ MC_SRCS     := $(filter-out %_helpers.c,$(MC_ALL_SRCS))
 MC_BINS     := $(patsubst tests/mc/%.c,bin/%,$(MC_SRCS))
 
 LIBMC := lib/libmc.so
+LIBMC_SONAME := libmc.so.0
+LIBMC_MAP    := mc/libmc.map
 MC_LIB_SRCS := mc/mc_core.c mc/mc_rm.c mc/mc_uvm.c mc/mc_submit.c \
                mc/mc_vaspace.c mc/mc_compute_qmd.c \
                mc/mc_compute_demo.c mc/mc_sm_owner.c
-UNIT_TEST_BINS := bin/mc_rm_version_test bin/mc_init_version_test \
-                  bin/mc_lce_selection_test
+
+# Per-translation-unit objects.  The library used to be built by a single
+# compiler invocation over every source; that does not scale as the tree grows
+# (architecture backends, a HAL layer, split-up core), and it recompiles
+# everything on any edit.
+BUILD_DIR   := build
+MC_LIB_OBJS := $(patsubst mc/%.c,$(BUILD_DIR)/%.o,$(MC_LIB_SRCS))
+
+# Automatic header-dependency tracking.  Replaces the hand-maintained header
+# prerequisite list on the link rule, which silently goes stale every time a
+# new internal header appears.
+DEPFLAGS := -MMD -MP
+
+# Library-only compile flags.  MC_BUILDING_LIBMC turns on the MC_API
+# visibility attribute in mc.h; -fvisibility=hidden makes every other symbol
+# library-private.  See mc/libmc.map for the link-time half of the contract.
+MC_LIB_CPPFLAGS := -DMC_BUILDING_LIBMC
+MC_LIB_CFLAGS   := -fPIC -fvisibility=hidden
+
+# Unit tests are auto-discovered like tests/mc.  Each test may override the
+# symbols it interposes and the library sources it links; the defaults suit a
+# test that wraps ioctl and links the whole library.
+UNIT_SRCS      := $(wildcard tests/unit/*.c)
+UNIT_TEST_BINS := $(patsubst tests/unit/%.c,bin/%,$(UNIT_SRCS))
+UNIT_WRAP_DEFAULT := ioctl
+UNIT_SRCS_DEFAULT := $(MC_LIB_SRCS)
+
+# Per-test overrides.  A test with no entry here gets the defaults above.
+UNIT_WRAP_mc_rm_version_test    := ioctl
+UNIT_SRCS_mc_rm_version_test    := mc/mc_rm.c
+UNIT_WRAP_mc_lce_selection_test := ioctl
+UNIT_SRCS_mc_lce_selection_test := mc/mc_rm.c
+UNIT_WRAP_mc_init_version_test  := open ioctl close
+
+# Resolve a test's wrap set / source list, falling back to the defaults.
+unit_wrap = $(if $(UNIT_WRAP_$(1)),$(UNIT_WRAP_$(1)),$(UNIT_WRAP_DEFAULT))
+unit_srcs = $(if $(UNIT_SRCS_$(1)),$(UNIT_SRCS_$(1)),$(UNIT_SRCS_DEFAULT))
 
 BINS := $(MC_BINS)
 LIBS := $(LIBMC)
@@ -100,8 +137,10 @@ mc-all: $(MC_BINS)
 $(foreach b,$(BINS),$(eval $(notdir $b): $b))
 
 libmc: $(LIBMC)
+# `|| exit $$?` — a bare `exit` would return the shell's last status rather
+# than the failing test's, which can mask a failure as success.
 test-unit: $(UNIT_TEST_BINS)
-	@for test_bin in $(UNIT_TEST_BINS); do ./$$test_bin || exit; done
+	@for test_bin in $(UNIT_TEST_BINS); do ./$$test_bin || exit $$?; done
 
 # Refuse to compile against a missing or different private driver ABI.  The
 # runtime repeats this check against the loaded nvidia.ko before initialization.
@@ -121,7 +160,7 @@ check-nvidia-source:
 	fi
 
 # ── Output directories (order-only prereqs so parallel builds don't race) ─
-bin lib:
+bin lib $(BUILD_DIR):
 	mkdir -p $@
 
 # ── Build rules ────────────────────────────────────────────────────────────
@@ -285,35 +324,55 @@ sm_owner: mc/mc_sm_owner_sass.h
 #                        (declared in mc_internal.h); reached through the
 #                        public API via mc_memcpy(..., MC_XFER_SM).
 #                        Embeds the sm_owner kernel from mc_sm_owner_sass.h.
-$(LIBMC): $(MC_LIB_SRCS) \
-                 mc/mc.h mc/mc_internal.h \
-                 mc/mc_compute_qmd.h mc/mc_sm_owner_sass.h \
-                 compat/nvidia.mk | lib check-nvidia-source
-	$(CC) $(CFLAGS) $(MC_CPPFLAGS) -fPIC $(SDK_INC) -Imc -shared -o $@ \
-	    $(MC_LIB_SRCS)
+# Per-TU compile.  Header prerequisites come from the generated .d files
+# (DEPFLAGS), so adding an internal header needs no Makefile edit.
+$(BUILD_DIR)/%.o: mc/%.c compat/nvidia.mk | $(BUILD_DIR) check-nvidia-source
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(MC_CPPFLAGS) $(MC_LIB_CPPFLAGS) \
+	    $(MC_LIB_CFLAGS) $(SDK_INC) -Imc -c -o $@ $<
 
-bin/mc_rm_version_test: tests/unit/mc_rm_version_test.c mc/mc_rm.c \
-                        mc/mc.h mc/mc_internal.h compat/nvidia.mk \
-                        | bin check-nvidia-source
-	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(SDK_INC) -Imc -o $@ \
-	    tests/unit/mc_rm_version_test.c mc/mc_rm.c -Wl,--wrap=ioctl
+# The version script is the authority on what libmc exports; mc/mc.h's MC_API
+# markers must list the same set.  Without it, every non-static symbol in every
+# TU lands in the public ABI.
+$(LIBMC): $(MC_LIB_OBJS) $(LIBMC_MAP) | lib
+	$(CC) $(CFLAGS) $(MC_LIB_CFLAGS) -shared -o $@ $(MC_LIB_OBJS) \
+	    -Wl,--version-script,$(LIBMC_MAP) -Wl,-soname,$(LIBMC_SONAME)
 
-bin/mc_lce_selection_test: tests/unit/mc_lce_selection_test.c mc/mc_rm.c \
-                           mc/mc.h mc/mc_internal.h compat/nvidia.mk \
-                           | bin check-nvidia-source
+# Generic unit-test rule.  Each test links the library sources it needs
+# directly (not the .so) and interposes libc entry points with --wrap, so the
+# whole suite runs without a GPU, without root, and without /dev/nvidia*.
+# Adding tests/unit/foo.c is enough to get bin/foo built and run.
+.SECONDEXPANSION:
+bin/%: tests/unit/%.c $$(call unit_srcs,$$*) compat/nvidia.mk \
+       | bin check-nvidia-source
 	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(SDK_INC) -Imc -o $@ \
-	    tests/unit/mc_lce_selection_test.c mc/mc_rm.c -Wl,--wrap=ioctl
+	    $< $(call unit_srcs,$*) \
+	    $(foreach w,$(call unit_wrap,$*),-Wl,--wrap=$(w))
 
-bin/mc_init_version_test: tests/unit/mc_init_version_test.c $(MC_LIB_SRCS) \
-                          mc/mc.h mc/mc_internal.h compat/nvidia.mk \
-                          | bin check-nvidia-source
-	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(SDK_INC) -Imc -o $@ \
-	    tests/unit/mc_init_version_test.c $(MC_LIB_SRCS) \
-	    -Wl,--wrap=open -Wl,--wrap=ioctl -Wl,--wrap=close
+# Guard the export contract: the MC_API markers in mc/mc.h, the version script,
+# and the symbols actually exported by the .so must all agree.  Losing an
+# MC_API silently un-exports a public function; forgetting `local: *` silently
+# publishes every internal helper.  Neither shows up as a build failure, so
+# check it explicitly.
+.PHONY: check-abi
+check-abi: $(LIBMC)
+	@nm -D --defined-only $(LIBMC) | awk '{print $$3}' | sed 's/@@.*//' \
+	    | grep '^mc_' | sort -u > $(BUILD_DIR)/.abi-actual
+	@grep '^MC_API' mc/mc.h \
+	    | sed -E 's/.*[ *](mc_[a-z_]+)\(.*/\1/' | sort -u > $(BUILD_DIR)/.abi-expected
+	@if ! diff -u $(BUILD_DIR)/.abi-expected $(BUILD_DIR)/.abi-actual; then \
+	  echo "ERROR: exported ABI does not match the MC_API set in mc/mc.h." >&2; \
+	  echo "       Reconcile mc/mc.h, mc/libmc.map, and the definitions." >&2; \
+	  exit 1;                                                                 \
+	fi
+	@echo "  OK      ABI: $$(wc -l < $(BUILD_DIR)/.abi-actual) exported symbols match mc/mc.h"
 
 # ── Utility ────────────────────────────────────────────────────────────────
 clean:
-	rm -rf bin lib
+	rm -rf bin lib $(BUILD_DIR)
+
+# Header dependencies generated by DEPFLAGS.  Absent on a clean tree, which is
+# why this is `-include`.
+-include $(MC_LIB_OBJS:.o=.d)
 
 help:
 	@echo "Targets:"
@@ -323,7 +382,8 @@ help:
 	@echo "  libs             build everything under lib/"
 	@echo "  libmc            build $(LIBMC) — the mc library"
 	@echo "  check-nvidia-source  validate NVIDIA_SRC is driver $(MC_NVIDIA_VERSION)"
-	@echo "  test-unit        run host-only unit tests"
+	@echo "  test-unit        run host-only unit tests (auto-discovered)"
+	@echo "  check-abi        verify exported symbols match mc.h's MC_API set"
 	@echo "  sm_owner         regenerate mc/mc_sm_owner_sass.h from the kernel"
 	@echo "  clean            remove bin/ and lib/ directories"
 	@echo "  help             this message"
