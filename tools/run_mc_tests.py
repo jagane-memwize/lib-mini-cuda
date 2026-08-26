@@ -173,6 +173,29 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
                     requires=carrier_feature[carrier_flag],
                 ))
 
+    # ── host-authored transfers over a carrier: mc_carrier_host_demo ──
+    #
+    # The same carrier VA spaces, exercised with MC_XFER_HOST only, so these
+    # need the carrier and nothing else.  That makes the --sysmem arm the only
+    # cell that moves data over a carrier on an architecture without xfer_sm,
+    # which is what covers Ampere's and Ada's carrier CE channel -- the one
+    # whose USERD placement is architecture-dependent.  Without it, "the
+    # channel comes up" was the whole of the evidence.
+    host_carrier_feature = {"--sysmem": ("carrier_sysmem",),
+                            "--fb":     ("carrier_fb",)}
+    for carrier_flag in ["--sysmem", "--fb"]:
+        for direction in ["", "--h2d"]:
+            for size in sizes:
+                args = [carrier_flag, "--size", size, "--iters", iters_default]
+                if direction:
+                    args.append(direction)
+                cells.append(Cell(
+                    binary="mc_carrier_host_demo",
+                    args=args,
+                    extra_check=_expect_pass_keyword,
+                    requires=host_carrier_feature[carrier_flag],
+                ))
+
     # ── parameterised host-side demos: mc_demo, mc_sm_owner_demo,
     #    mc_compute_dbell_chain_demo, mc_dbell_chain_demo ──
     # 2-way matrix: direction.
