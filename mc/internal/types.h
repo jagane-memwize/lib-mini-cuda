@@ -26,6 +26,8 @@
 #include "nvtypes.h"
 #include "nvCpuUuid.h"      /* NV_UUID_LEN */
 
+#include "hal/arch.h"
+
 #define MC_UNUSED __attribute__((unused))
 
 /* ── Named constants ───────────────────────────────────────────────────────
@@ -267,6 +269,12 @@ struct mc_compute_extras {
  */
 typedef struct {
     /* identity */
+    /* The architecture this channel was brought up for.  Submission
+     * primitives take only a channel, so the descriptor has to be reachable
+     * from one; a channel belongs to exactly one architecture for its whole
+     * life, so carrying it here rather than threading it through every call
+     * is both cheaper and more honest. */
+    const mc_arch_desc_t          *arch;
     mc_channel_role_t              role;              /* what mc_memcpy / mc_sm_owner_* dispatches to */
     mc_channel_type_t              type;              /* discriminates `x` below; selects bring-up shape */
     mc_vas_t                       vas_id;            /* index into mc_ctx.vas[] */
@@ -364,6 +372,13 @@ typedef struct {
  * (vas, role) → mc_channel_t * for dispatch.
  */
 struct mc_ctx {
+    /* The architecture this context is driving.  Selected once during
+     * mc_init and constant thereafter; every class id, layout offset and
+     * capability bit is read through here rather than baked into a call
+     * site.  Detection lands in a later step -- for now mc_init points this
+     * at the Hopper descriptor unconditionally. */
+    const mc_arch_desc_t          *arch;
+
     /* Device fds + UVM fd */
     int                            ctl_fd;
     int                            dev_fd;

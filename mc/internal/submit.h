@@ -21,14 +21,6 @@
 
 #include "internal/types.h"
 
-/* Build the NVC8B5 method stream for one CE copy.  Returns the
- * pushbuffer-end pointer (caller computes byte length as
- * (end - pb) * sizeof(uint32_t)). */
-uint32_t *mc_write_transfer_methods(uint32_t *pb,
-                                    uint64_t src_va, uint64_t dst_va,
-                                    uint32_t nbytes,
-                                    uint64_t sema_va, uint32_t sema_payload);
-
 /* USERD GPPut bump + BAR1 doorbell ring, in that order, fenced.
  * The method-stream and GPFIFO-entry emitters live in hal/methods.h. */
 void     ring_doorbell(void *userd,

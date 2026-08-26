@@ -35,6 +35,7 @@
 #include "internal/vaspace.h"
 #include "internal/alloc.h"
 #include "internal/compute.h"
+#include "hal/methods.h"
 
 /*
  * mc_dbell_demo_ring — submit a 4-byte CE LAUNCH_DMA on the DMA
@@ -77,6 +78,7 @@ mc_status_t mc_dbell_demo_ring(mc_ctx_t *ctx, uint32_t token)
   if (ch->sema_payload == 0) ch->sema_payload = 1;
 
   pb_end = mc_write_transfer_methods(
+      ctx->arch,
       ch->pb_cpu,
       ex->token_cell_gpu_va,                          /* src: sysmem token cell */
       dbell_gpu_va + MC_VF_DOORBELL_OFFSET,           /* dst: BAR1 +0x90 */
@@ -191,6 +193,7 @@ mc_status_t mc_memcpy_gpu_doorbell_ce(mc_ctx_t *ctx, void *dst,
   if (prim->sema_payload == 0) prim->sema_payload = 1;
 
   prim_pb_end = mc_write_transfer_methods(
+      ctx->arch,
       prim->pb_cpu,
       src_slot->gpu_va, dst_slot->gpu_va,
       (uint32_t)n, prim->sema_gpu_va, prim->sema_payload);
@@ -211,6 +214,7 @@ mc_status_t mc_memcpy_gpu_doorbell_ce(mc_ctx_t *ctx, void *dst,
   if (dma->sema_payload == 0) dma->sema_payload = 1;
 
   sec_pb_end = mc_write_transfer_methods(
+      ctx->arch,
       dma->pb_cpu,
       dma_ex->token_cell_gpu_va,                          /* src */
       dbell_gpu_va + MC_VF_DOORBELL_OFFSET,               /* dst: UVM ch doorbell */

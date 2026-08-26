@@ -142,7 +142,7 @@ mc_status_t mc_channel_arm(mc_channel_t *ch,
   if (t0_out) clock_gettime(CLOCK_MONOTONIC, t0_out);
 
   /* Publish: write the GPFIFO entry pointing at pb_gpu_va. */
-  entries_used = write_gp_entry(ch->gpfifo_ring, ch->gp_put,
+  entries_used = write_gp_entry(ch->arch, ch->gpfifo_ring, ch->gp_put,
                                 MC_GPFIFO_ENTRIES, ch->pb_gpu_va, 0,
                                 copy_bytes);
   /* PBDMA reads USERD GPPut as a ring INDEX (Hopper NVC86F GPPut is
@@ -179,7 +179,7 @@ mc_status_t mc_channel_submit(mc_channel_t *ch,
 
   clock_gettime(CLOCK_MONOTONIC, &t0);
 
-  entries_used = write_gp_entry(ch->gpfifo_ring, ch->gp_put,
+  entries_used = write_gp_entry(ch->arch, ch->gpfifo_ring, ch->gp_put,
                                 MC_GPFIFO_ENTRIES, ch->pb_gpu_va, 0,
                                 copy_bytes);
   /* See mc_channel_arm: GPPut wraps modulo MC_GPFIFO_ENTRIES. */

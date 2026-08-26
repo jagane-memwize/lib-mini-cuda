@@ -27,7 +27,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "hal/arch.h"
 #include "hal/methods.h"
+
+/* The emitters take a descriptor for their class ids and capability bits.
+ * Using the real Hopper backend rather than a stub keeps the goldens tied to
+ * a descriptor that ships, so a wrong class id in the descriptor fails here
+ * too -- not just a wrong constant in the emitter. */
+#define ARCH (&mc_arch_hopper)
 
 static int failures;
 
@@ -86,7 +93,7 @@ static void test_transfer_methods(void)
     0x200180c0, 0x0000000c,             /* LAUNCH_DMA (semaphore release)  */
   };
   uint32_t pb[64];
-  uint32_t *end = mc_write_transfer_methods(pb,
+  uint32_t *end = mc_write_transfer_methods(ARCH, pb,
                                             0x1122334455667788ULL,
                                             0x99aabbccddeeff00ULL,
                                             0x1000,
@@ -116,7 +123,7 @@ static void test_compute_setup(void)
     0x200221ec, 0x00000000, 0xff000000, /* LOCAL_MEMORY_WINDOW = 0xff<<24   */
   };
   uint32_t pb[64];
-  uint32_t *end = mc_compute_write_setup(pb);
+  uint32_t *end = mc_compute_write_setup(ARCH, pb);
   expect_stream("compute_setup", pb, (size_t)(end - pb),
                 want, sizeof(want) / sizeof(want[0]));
 
@@ -145,10 +152,10 @@ static void test_compute_launch(void)
   uint32_t base[64], inval[64];
   size_t   base_n, inval_n, i;
 
-  base_n  = (size_t)(mc_compute_write_launch(base, 0x1234567800ULL,
+  base_n  = (size_t)(mc_compute_write_launch(ARCH, base, 0x1234567800ULL,
                                              0xfeedfaceULL, 0x11223344,
                                              false) - base);
-  inval_n = (size_t)(mc_compute_write_launch(inval, 0x1234567800ULL,
+  inval_n = (size_t)(mc_compute_write_launch(ARCH, inval, 0x1234567800ULL,
                                              0xfeedfaceULL, 0x11223344,
                                              true) - inval);
 
@@ -177,14 +184,14 @@ static void test_gp_entry(void)
   uint32_t used;
 
   memset((void *)ring, 0, sizeof(ring));
-  used = write_gp_entry(ring, 0, 512, 0x10000ULL, 0, 0x80);
+  used = write_gp_entry(ARCH, ring, 0, 512, 0x10000ULL, 0, 0x80);
   EXPECT(used == 1);
   /* GP_ENTRY0 carries the VA's low bits shifted right by 2. */
   EXPECT(ring[0] == (0x10000u >> 2 << 2));
   EXPECT(ring[1] != 0);
 
   memset((void *)ring, 0, sizeof(ring));
-  used = write_gp_entry(ring, 3, 512, 0x0000ABCDEF000000ULL, 0x40, 0x80);
+  used = write_gp_entry(ARCH, ring, 3, 512, 0x0000ABCDEF000000ULL, 0x40, 0x80);
   EXPECT(used == 2);          /* extended-base opcode + the entry itself */
   EXPECT(ring[6] == 0x0000ab00);
   EXPECT(ring[7] == 0x00000004);

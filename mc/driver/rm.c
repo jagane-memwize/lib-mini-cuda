@@ -540,7 +540,8 @@ NvHandle rm_register_user_memory(int ctl_fd, int dev_fd, NvHandle root,
  *
  * index = GPU_NEW requests a fresh VA space (vs. inheriting one).
  */
-NvHandle rm_alloc_vaspace(int ctl_fd, NvHandle root, NvHandle device)
+NvHandle rm_alloc_vaspace(int ctl_fd, const mc_arch_desc_t *arch,
+                          NvHandle root, NvHandle device)
 {
   NV_VASPACE_ALLOCATION_PARAMETERS vp = {};
   NVOS64_PARAMETERS                p  = {};
@@ -552,7 +553,7 @@ NvHandle rm_alloc_vaspace(int ctl_fd, NvHandle root, NvHandle device)
   p.hRoot         = root;
   p.hObjectParent = device;
   p.hObjectNew    = next_handle();
-  p.hClass        = FERMI_VASPACE_A;
+  p.hClass        = arch->cls.vaspace;
   p.pAllocParms   = (NvP64)(uintptr_t)&vp;
 
   r = ioctl(ctl_fd, _IOWR('F', NV_ESC_RM_ALLOC & 0xff, NVOS64_PARAMETERS), &p);
@@ -582,7 +583,8 @@ NvHandle rm_alloc_vaspace(int ctl_fd, NvHandle root, NvHandle device)
  * NV_ERR_INVALID_OBJECT_HANDLE (resMapTo_IMPL default).  See
  * rm_alloc_virtual_memory() below for the carrier allocation.
  */
-NvHandle rm_alloc_vaspace_dma(int ctl_fd, NvHandle root,
+NvHandle rm_alloc_vaspace_dma(int ctl_fd, const mc_arch_desc_t *arch,
+                              NvHandle root,
                                      NvHandle device)
 {
   NV_VASPACE_ALLOCATION_PARAMETERS vp = {};
@@ -595,7 +597,7 @@ NvHandle rm_alloc_vaspace_dma(int ctl_fd, NvHandle root,
   p.hRoot         = root;
   p.hObjectParent = device;
   p.hObjectNew    = next_handle();
-  p.hClass        = FERMI_VASPACE_A;
+  p.hClass        = arch->cls.vaspace;
   p.pAllocParms   = (NvP64)(uintptr_t)&vp;
 
   r = ioctl(ctl_fd, _IOWR('F', NV_ESC_RM_ALLOC & 0xff, NVOS64_PARAMETERS), &p);
@@ -1087,14 +1089,15 @@ void rm_perf_boost(int ctl_fd, NvHandle client, NvHandle subdevice)
  *     libcuda writes 194/194 doorbells here; we do the same.
  * Both have identical VF_DOORBELL offset (+0x90 within the window).
  */
-NvHandle rm_alloc_usermode(int ctl_fd, NvHandle root, NvHandle subdevice,
+NvHandle rm_alloc_usermode(int ctl_fd, const mc_arch_desc_t *arch,
+                                  NvHandle root, NvHandle subdevice,
                                   bool bar1)
 {
   NV_HOPPER_USERMODE_A_PARAMS um_params = {
     .bBar1Mapping = bar1,
     .bPriv        = NV_FALSE,
   };
-  return rm_alloc(ctl_fd, root, subdevice, HOPPER_USERMODE_A, &um_params);
+  return rm_alloc(ctl_fd, root, subdevice, arch->cls.usermode, &um_params);
 }
 
 /*
@@ -1106,14 +1109,15 @@ NvHandle rm_alloc_usermode(int ctl_fd, NvHandle root, NvHandle subdevice,
  * through pick_non_grce_lce → rm_alloc_tsg → rm_alloc_channel →
  * rm_alloc_ce.
  */
-NvHandle rm_alloc_tsg(int ctl_fd, NvHandle root, NvHandle device,
+NvHandle rm_alloc_tsg(int ctl_fd, const mc_arch_desc_t *arch,
+                             NvHandle root, NvHandle device,
                              NvU32 engine_type, NvHandle vaspace)
 {
   NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS tsg_params = {
     .engineType = engine_type,
     .hVASpace   = vaspace,
   };
-  return rm_alloc(ctl_fd, root, device, KEPLER_CHANNEL_GROUP_A, &tsg_params);
+  return rm_alloc(ctl_fd, root, device, arch->cls.channel_group, &tsg_params);
 }
 
 /*
@@ -1131,7 +1135,8 @@ NvHandle rm_alloc_tsg(int ctl_fd, NvHandle root, NvHandle device,
  * library packs GPFIFO at offset 0 and USERD at +MC_USERD_OFFSET in
  * one gpfifo+userd alloc).
  */
-NvHandle rm_alloc_channel(int ctl_fd, NvHandle root, NvHandle tsg,
+NvHandle rm_alloc_channel(int ctl_fd, const mc_arch_desc_t *arch,
+                                 NvHandle root, NvHandle tsg,
                                  NvU64 gp_fifo_offset, NvU32 gp_fifo_entries,
                                  NvU32 engine_type, NvHandle h_userd,
                                  NvU64 userd_offset)
@@ -1145,7 +1150,7 @@ NvHandle rm_alloc_channel(int ctl_fd, NvHandle root, NvHandle tsg,
     .hVASpace        = 0,
     .hHandleVASpace  = 0,
   };
-  return rm_alloc(ctl_fd, root, tsg, HOPPER_CHANNEL_GPFIFO_A, &chan_params);
+  return rm_alloc(ctl_fd, root, tsg, arch->cls.channel_gpfifo, &chan_params);
 }
 
 /*
@@ -1155,14 +1160,15 @@ NvHandle rm_alloc_channel(int ctl_fd, NvHandle root, NvHandle tsg,
  * NVB0B5_ALLOCATION_PARAMETERS with VERSION_1 + engine_type matching
  * the TSG/channel.  libcuda does this too on H100 PCIe.
  */
-NvHandle rm_alloc_ce(int ctl_fd, NvHandle root, NvHandle channel,
+NvHandle rm_alloc_ce(int ctl_fd, const mc_arch_desc_t *arch,
+                            NvHandle root, NvHandle channel,
                             NvU32 engine_type)
 {
   NVB0B5_ALLOCATION_PARAMETERS ce_params = {
     .version    = NVB0B5_ALLOCATION_PARAMETERS_VERSION_1,
     .engineType = engine_type,
   };
-  return rm_alloc(ctl_fd, root, channel, HOPPER_DMA_COPY_A, &ce_params);
+  return rm_alloc(ctl_fd, root, channel, arch->cls.dma_copy, &ce_params);
 }
 
 /*
@@ -1171,7 +1177,8 @@ NvHandle rm_alloc_ce(int ctl_fd, NvHandle root, NvHandle channel,
  * as RS_OPTIONAL so we can pass NULL — but libcuda always passes a
  * filled-in struct (version=2, size=sizeof, flags=0).  Match that.
  */
-NvHandle rm_alloc_compute(int ctl_fd, NvHandle root, NvHandle channel)
+NvHandle rm_alloc_compute(int ctl_fd, const mc_arch_desc_t *arch,
+                                 NvHandle root, NvHandle channel)
 {
   NV_GR_ALLOCATION_PARAMETERS gr_params = {
     .version = 2,
@@ -1179,7 +1186,7 @@ NvHandle rm_alloc_compute(int ctl_fd, NvHandle root, NvHandle channel)
     .size    = sizeof(NV_GR_ALLOCATION_PARAMETERS),
     .caps    = 0,
   };
-  return rm_alloc(ctl_fd, root, channel, HOPPER_COMPUTE_A, &gr_params);
+  return rm_alloc(ctl_fd, root, channel, arch->cls.compute, &gr_params);
 }
 
 /*

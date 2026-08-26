@@ -14,6 +14,7 @@
 #include <stddef.h>
 
 #include "nvtypes.h"
+#include "hal/arch.h"
 
 typedef enum {
   MC_RM_VERSION_ERROR    = -1,
@@ -60,8 +61,10 @@ NvHandle rm_alloc_vidmem_bar1_at(int ctl_fd, const char *dev_path,
                                  NvHandle client, NvHandle device,
                                  NvU64 size, void *want_va,
                                  void **out_cpu_va);
-NvHandle rm_alloc_vaspace(int ctl_fd, NvHandle root, NvHandle device);
-NvHandle rm_alloc_vaspace_dma(int ctl_fd, NvHandle root, NvHandle device);
+NvHandle rm_alloc_vaspace(int ctl_fd, const mc_arch_desc_t *arch,
+                          NvHandle root, NvHandle device);
+NvHandle rm_alloc_vaspace_dma(int ctl_fd, const mc_arch_desc_t *arch,
+                              NvHandle root, NvHandle device);
 NvHandle rm_alloc_virtual_memory(int ctl_fd, NvHandle root, NvHandle device,
                                  NvHandle h_vaspace, NvU64 size,
                                  NvU64 *out_base);
@@ -87,17 +90,21 @@ void     rm_perf_boost(int ctl_fd, NvHandle client, NvHandle subdevice);
 NvHandle rm_alloc_root(int ctl_fd);
 NvHandle rm_alloc_device(int ctl_fd, NvHandle root);
 NvHandle rm_alloc_subdevice(int ctl_fd, NvHandle root, NvHandle device);
-NvHandle rm_alloc_usermode(int ctl_fd, NvHandle root, NvHandle subdevice,
+NvHandle rm_alloc_usermode(int ctl_fd, const mc_arch_desc_t *arch,
+                           NvHandle root, NvHandle subdevice,
                            bool bar1_mapping);
-NvHandle rm_alloc_tsg(int ctl_fd, NvHandle root, NvHandle device,
+NvHandle rm_alloc_tsg(int ctl_fd, const mc_arch_desc_t *arch,
+                      NvHandle root, NvHandle device,
                       NvU32 engine_type, NvHandle vaspace);
-NvHandle rm_alloc_channel(int ctl_fd, NvHandle root, NvHandle tsg,
+NvHandle rm_alloc_channel(int ctl_fd, const mc_arch_desc_t *arch,
+                          NvHandle root, NvHandle tsg,
                           NvU64 gp_fifo_offset, NvU32 gp_fifo_entries,
                           NvU32 engine_type, NvHandle h_userd,
                           NvU64 userd_offset);
-NvHandle rm_alloc_ce(int ctl_fd, NvHandle root, NvHandle channel,
-                     NvU32 engine_type);
-NvHandle rm_alloc_compute(int ctl_fd, NvHandle root, NvHandle channel);
+NvHandle rm_alloc_ce(int ctl_fd, const mc_arch_desc_t *arch,
+                     NvHandle root, NvHandle channel, NvU32 engine_type);
+NvHandle rm_alloc_compute(int ctl_fd, const mc_arch_desc_t *arch,
+                          NvHandle root, NvHandle channel);
 int      rm_gpfifo_schedule(int ctl_fd, NvHandle h_client, NvHandle h_channel);
 void     rm_channel_disable(int ctl_fd, NvHandle h_client, NvHandle h_channel);
 

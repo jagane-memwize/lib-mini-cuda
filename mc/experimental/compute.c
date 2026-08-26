@@ -122,14 +122,14 @@ mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
   pb = ch->pb_cpu;
   if (!ex->setup_done)
   {
-    pb = mc_compute_write_setup(pb);
+    pb = mc_compute_write_setup(ch->arch, pb);
     ex->setup_done = true;
   }
   /* invalidate_caches = false: every caller of this path passes identical
    * CB0 arguments on every launch (dst_va is the constant doorbell address
    * and token is the constant work-submit token), so the SM's constant cache
    * returning a prior launch's bytes is harmless here. */
-  pb_end = mc_compute_write_launch(pb, mod->qmd_gpu_va,
+  pb_end = mc_compute_write_launch(ch->arch, pb, mod->qmd_gpu_va,
                                    ch->sema_gpu_va,
                                    ch->sema_payload,
                                    false);
@@ -242,6 +242,7 @@ mc_status_t mc_memcpy_gpu_doorbell_sm(mc_ctx_t *ctx, void *dst,
   if (prim->sema_payload == 0) prim->sema_payload = 1;
 
   prim_pb_end = mc_write_transfer_methods(
+      ctx->arch,
       prim->pb_cpu,
       src_slot->gpu_va, dst_slot->gpu_va,
       (uint32_t)n, prim->sema_gpu_va, prim->sema_payload);

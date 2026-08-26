@@ -140,7 +140,7 @@ int mc_va_space_init_uvm(mc_ctx_t *ctx)
   mc_va_space_t *vas = &ctx->vas[MC_VAS_UVM];
 
   vas->kind = MC_VAS_KIND_UVM;
-  vas->h_vaspace = rm_alloc_vaspace(ctx->ctl_fd, ctx->h_client, ctx->h_device);
+  vas->h_vaspace = rm_alloc_vaspace(ctx->ctl_fd, ctx->arch, ctx->h_client, ctx->h_device);
   if (!vas->h_vaspace) return -1;
   return 0;
 }
@@ -159,7 +159,7 @@ static int mc_va_space_init_carrier_kind(mc_ctx_t *ctx, mc_vas_t slot,
   mc_va_space_t *vas = &ctx->vas[slot];
 
   vas->kind = kind;
-  vas->h_vaspace = rm_alloc_vaspace_dma(ctx->ctl_fd, ctx->h_client,
+  vas->h_vaspace = rm_alloc_vaspace_dma(ctx->ctl_fd, ctx->arch, ctx->h_client,
                                         ctx->h_device);
   if (!vas->h_vaspace) return -1;
   vas->carrier_count = 0;

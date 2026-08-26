@@ -186,20 +186,20 @@ static int mc_channel_alloc_via_carrier(mc_ctx_t *ctx, mc_channel_t *ch)
   }
 
   /* TSG + channel + engine-class object on the carrier's VAS. */
-  ch->h_tsg = rm_alloc_tsg(ctx->ctl_fd, ctx->h_client, ctx->h_device,
+  ch->h_tsg = rm_alloc_tsg(ctx->ctl_fd, ctx->arch, ctx->h_client, ctx->h_device,
                            ch->engine_type, vas->h_vaspace);
   if (!ch->h_tsg) return -1;
 
   ch->h_channel = rm_alloc_channel(
-      ctx->ctl_fd, ctx->h_client, ch->h_tsg, ch->gpfifo_gpu_va,
+      ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_tsg, ch->gpfifo_gpu_va,
       MC_GPFIFO_ENTRIES, ch->engine_type, ch->h_gpfifo_mem,
       MC_USERD_OFFSET);
   if (!ch->h_channel) return -1;
 
   if (ch->engine_type == NV2080_ENGINE_TYPE_GR0)
-    ch->h_engine = rm_alloc_compute(ctx->ctl_fd, ctx->h_client, ch->h_channel);
+    ch->h_engine = rm_alloc_compute(ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_channel);
   else
-    ch->h_engine = rm_alloc_ce(ctx->ctl_fd, ctx->h_client, ch->h_channel,
+    ch->h_engine = rm_alloc_ce(ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_channel,
                                ch->engine_type);
   if (!ch->h_engine) return -1;
 
@@ -309,6 +309,7 @@ int mc_dma_channel_init(mc_ctx_t *ctx, mc_vas_t slot,
 {
   mc_va_space_t         *vas = &ctx->vas[slot];
   mc_channel_t          *ch  = mc_vas_add_channel(vas, role);
+  if (ch != NULL) ch->arch = ctx->arch;
   struct mc_dma_extras  *ex;
   void                  *cpu = NULL;
 
@@ -485,6 +486,7 @@ int mc_compute_channel_init(mc_ctx_t *ctx, mc_vas_t slot)
 {
   mc_va_space_t            *vas = &ctx->vas[slot];
   mc_channel_t             *ch  = mc_vas_add_channel(vas, MC_ROLE_COMPUTE);
+  if (ch != NULL) ch->arch = ctx->arch;
   struct mc_compute_extras *ex;
 
   if (ch == NULL) return -1;
@@ -571,6 +573,7 @@ int mc_uvm_channel_init(mc_ctx_t *ctx, NvU32 lce_engine_type)
   void                 *sema_direct = NULL;
 
   ch = mc_vas_add_channel(&ctx->vas[MC_VAS_UVM], MC_ROLE_UVM_CE);
+  if (ch != NULL) ch->arch = ctx->arch;
   if (ch == NULL) return -1;
 
   ch->type        = MC_CH_TYPE_UVM;
@@ -642,18 +645,18 @@ int mc_uvm_channel_init(mc_ctx_t *ctx, NvU32 lce_engine_type)
   if (!ch->gpfifo_gpu_va) return -1;
 
   /* TSG + channel + CE engine, all bound to the UVM VAS. */
-  ch->h_tsg = rm_alloc_tsg(ctx->ctl_fd, ctx->h_client, ctx->h_device,
+  ch->h_tsg = rm_alloc_tsg(ctx->ctl_fd, ctx->arch, ctx->h_client, ctx->h_device,
                            lce_engine_type,
                            ctx->vas[MC_VAS_UVM].h_vaspace);
   if (!ch->h_tsg) return -1;
 
-  ch->h_channel = rm_alloc_channel(ctx->ctl_fd, ctx->h_client, ch->h_tsg,
+  ch->h_channel = rm_alloc_channel(ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_tsg,
                                    ch->gpfifo_gpu_va, MC_GPFIFO_ENTRIES,
                                    lce_engine_type, ex->h_gpfifo_userd_mem,
                                    MC_USERD_OFFSET);
   if (!ch->h_channel) return -1;
 
-  ch->h_engine = rm_alloc_ce(ctx->ctl_fd, ctx->h_client, ch->h_channel,
+  ch->h_engine = rm_alloc_ce(ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_channel,
                              lce_engine_type);
   if (!ch->h_engine) return -1;
 

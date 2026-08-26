@@ -24,6 +24,7 @@
 #include "internal/types.h"
 #include "internal/log.h"
 #include "internal/submit.h"
+#include "hal/methods.h"
 #include "internal/vaspace.h"
 #include "internal/alloc.h"
 #include "internal/compute.h"
@@ -137,7 +138,7 @@ mc_status_t mc_memcpy(mc_ctx_t *ctx, const void *dst_ptr, const void *src_ptr,
   ch->sema_payload++;
   if (ch->sema_payload == 0) ch->sema_payload = 1;
 
-  pb_end = mc_write_transfer_methods(ch->pb_cpu,
+  pb_end = mc_write_transfer_methods(ch->arch, ch->pb_cpu,
                                      src_slot->gpu_va, dst_slot->gpu_va,
                                      (uint32_t)n,
                                      ch->sema_gpu_va, ch->sema_payload);

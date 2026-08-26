@@ -99,7 +99,7 @@ MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
                 mc/core/memcpy.c mc/core/vaspace.c
 MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
-MC_ARCH_SRCS := mc/arch/hopper/qmd_v04.c
+MC_ARCH_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/qmd_v04.c
 MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c \
                 mc/experimental/doorbell.c
 
@@ -139,7 +139,8 @@ UNIT_WRAP_mc_lce_selection_test := ioctl
 UNIT_SRCS_mc_lce_selection_test := mc/driver/rm.c
 UNIT_WRAP_mc_init_version_test  := open ioctl close
 # Pure encoding test: links only the emitters, interposes nothing.
-UNIT_SRCS_mc_methods_test       := mc/hal/methods.c
+UNIT_SRCS_mc_methods_test       := mc/hal/methods.c mc/arch/hopper/backend.c
+UNIT_SRCS_mc_arch_desc_test     := mc/arch/hopper/backend.c
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
 unit_wrap = $(if $(UNIT_WRAP_$(1)),$(UNIT_WRAP_$(1)),$(UNIT_WRAP_DEFAULT))
@@ -351,6 +352,8 @@ sm_owner: mc/arch/hopper/sm_owner_sass.h
 #                            mc_host_register / mc_gpu_va.
 #   core/memcpy.c            mc_memcpy and its VAS/agent dispatch.
 #   core/vaspace.c           VA pool (Paper-F1 anchor) + mc_va_space_* helpers.
+#   arch/hopper/backend.c    the Hopper architecture descriptor: class ids,
+#                            layout offsets, capability bits.  Pure data.
 #   arch/hopper/qmd_v04.c    Hopper QMD V04 builder + embedded SASS.
 #   experimental/compute.c   HOPPER_COMPUTE_A demos (mc_compute_doorbell_kernel,
 #                            mc_memcpy_gpu_doorbell_sm, mc_compute_get_scratch).

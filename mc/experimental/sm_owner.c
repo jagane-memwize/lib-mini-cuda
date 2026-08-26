@@ -440,14 +440,14 @@ mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
   pb = compute_ch->pb_cpu;
   if (!cex->setup_done)
   {
-    pb = mc_compute_write_setup(pb);
+    pb = mc_compute_write_setup(compute_ch->arch, pb);
     cex->setup_done = true;
   }
   /* invalidate_caches = true: this path patches CB0 per call (gp_put_in,
    * sema_payload and the copy addresses all change between launches) while
    * reusing one CB0 GPU VA, so the constant cache must be invalidated or
    * iteration 1 reads iteration 0's arguments and wedges. */
-  pb_end = mc_compute_write_launch(pb, mod->qmd_gpu_va,
+  pb_end = mc_compute_write_launch(compute_ch->arch, pb, mod->qmd_gpu_va,
                                    compute_ch->sema_gpu_va,
                                    compute_ch->sema_payload,
                                    true);

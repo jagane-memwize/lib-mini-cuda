@@ -31,6 +31,7 @@
 #include "class/clb1c0.h"        /* INVALIDATE_SKED_CACHES */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COPY_ENGINE / _COMPUTE */
 
+#include "hal/arch.h"
 #include "hal/method_abi.h"      /* compile-time cross-class ABI proof */
 #include "hal/methods.h"
 #include "internal/types.h"
@@ -93,13 +94,14 @@
  * the produce-fence-publish ordering internally; callers do not
  * sfence between mc_write_transfer_methods() and the publish step.
  */
-uint32_t *mc_write_transfer_methods(uint32_t *pb, uint64_t src_va,
-                                           uint64_t dst_va, uint32_t nbytes,
-                                           uint64_t sema_va,
-                                           uint32_t sema_payload)
+uint32_t *mc_write_transfer_methods(const mc_arch_desc_t *arch,
+                                    uint32_t *pb,
+                                    uint64_t src_va, uint64_t dst_va,
+                                    uint32_t nbytes,
+                                    uint64_t sema_va, uint32_t sema_payload)
 {
   *pb++ = INCR_HEADER(NVC86F_SET_OBJECT, 1);
-  *pb++ = HOPPER_DMA_COPY_A;
+  *pb++ = arch->cls.dma_copy;
 
   *pb++ = INCR_HEADER(NVC8B5_OFFSET_IN_UPPER, 2);
   *pb++ = DRF_NUM(C8B5, _OFFSET_IN_UPPER, _UPPER, (NvU32)(src_va >> 32));
@@ -168,7 +170,8 @@ uint32_t *mc_write_transfer_methods(uint32_t *pb, uint64_t src_va,
  * An sfence is emitted at the end so the GPFIFO ring BAR1 writes are
  * flushed before the caller advances GPPut.
  */
-uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
+uint32_t write_gp_entry(const mc_arch_desc_t *arch,
+                               volatile uint32_t *gpfifo_ring,
                                uint32_t gp_put_index, uint32_t ring_entries,
                                uintptr_t pb_cpu_va, uint32_t pb_offset,
                                uint32_t method_bytes)
@@ -182,6 +185,19 @@ uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
 
   if (ext_base != 0)
   {
+    /* A pushbuffer at or above 2^40 needs an extended-base opcode ahead of
+     * the real entry.  AMPERE_CHANNEL_GPFIFO_A has no such opcode, so on
+     * that class such a pushbuffer is simply unreachable.  That is a
+     * bring-up bug rather than a runtime condition -- the VA pool and every
+     * channel allocation sit far below 2^40 -- so fail loudly instead of
+     * emitting an entry the class cannot parse. */
+    if (!arch->cap.gpfifo_has_ext_base)
+    {
+      ERROR_LOG("pushbuffer VA 0x%" NvU64_fmtx " needs an extended-base GPFIFO "
+                "entry, but %s has no PB extended-base opcode",
+                (NvU64)pb_va, arch->name);
+      return 0;
+    }
     idx = (gp_put_index + consumed) & (ring_entries - 1);
     gpfifo_ring[idx * 2 + 0] =
         DRF_NUM(C86F, _GP_ENTRY0, _PB_EXTENDED_BASE_OPERAND, ext_base);
@@ -242,13 +258,13 @@ uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
  *       at 1<<32.  16 GiB is well above any mc VA.
  *   - SET_SHADER_LOCAL_MEMORY_WINDOW_A/B = 0xffULL << 24 (NVK constant)
  */
-uint32_t *mc_compute_write_setup(uint32_t *pb)
+uint32_t *mc_compute_write_setup(const mc_arch_desc_t *arch, uint32_t *pb)
 {
   uint64_t smem_window = 0x400000000ULL;     /* 16 GiB; above all mc VAs */
   uint64_t lmem_window = 0xffULL << 24;      /* NVK constant */
 
   *pb++ = INCR_HEADER_COMPUTE(NVC86F_SET_OBJECT, 1);
-  *pb++ = HOPPER_COMPUTE_A;
+  *pb++ = arch->cls.compute;
 
   /* INVALIDATE_SKED_CACHES (no payload bits matter — V=0 means
    * "invalidate now"; NVK passes 0). */
@@ -280,7 +296,7 @@ uint32_t *mc_compute_write_setup(uint32_t *pb)
  * See the header for why `invalidate_caches` is a caller decision rather than
  * something this builder does unconditionally.
  */
-uint32_t *mc_compute_write_launch(uint32_t *pb,
+uint32_t *mc_compute_write_launch(const mc_arch_desc_t *arch, uint32_t *pb,
                                   uint64_t qmd_gpu_va,
                                   uint64_t sema_va,
                                   uint32_t sema_payload,

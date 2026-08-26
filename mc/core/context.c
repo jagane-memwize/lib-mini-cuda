@@ -37,6 +37,7 @@
 #include "internal/vaspace.h"
 #include "internal/alloc.h"
 #include "internal/channel.h"
+#include "hal/arch.h"
 
 /* One line summarising every channel mc_init brought up.  Kept out of mc_init
  * so the six lookups it needs do not land in that function's scope. */
@@ -80,6 +81,13 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
   ctx = calloc(1, sizeof(*ctx));
   if (ctx == NULL) { ERROR_LOG("calloc ctx"); return MC_EALLOC; }
   ctx->ctl_fd = ctx->dev_fd = ctx->uvm_fd = -1;
+
+  /* Select the architecture descriptor.  Hard-wired to Hopper for now: chip
+   * detection needs a subdevice, which does not exist this early, so it slots
+   * in further down once the RM object tree is up.  Everything below reads
+   * class ids and layout offsets through ctx->arch rather than naming a
+   * generation, so that later step changes only this assignment. */
+  ctx->arch = &mc_arch_hopper;
 
   /* Open only the control device first.  A private ABI mismatch must be
    * rejected before /dev/nvidia0 is opened, the VA pool is reserved, or any
@@ -139,7 +147,7 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
 
   /* HOPPER_USERMODE_A BAR0 + BAR1.  Both must be alive before the
    * carrier VAS so we can install the BAR1 doorbell PTE. */
-  ctx->h_usermode_bar0 = rm_alloc_usermode(ctx->ctl_fd, ctx->h_client,
+  ctx->h_usermode_bar0 = rm_alloc_usermode(ctx->ctl_fd, ctx->arch, ctx->h_client,
                                            ctx->h_subdevice, false);
   if (!ctx->h_usermode_bar0) goto fail;
   ctx->usermode_bar0_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
@@ -148,7 +156,7 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
                                          MC_USERMODE_SIZE, 0);
   if (ctx->usermode_bar0_cpu == NULL) goto fail;
 
-  ctx->h_usermode_bar1 = rm_alloc_usermode(ctx->ctl_fd, ctx->h_client,
+  ctx->h_usermode_bar1 = rm_alloc_usermode(ctx->ctl_fd, ctx->arch, ctx->h_client,
                                            ctx->h_subdevice, true);
   if (!ctx->h_usermode_bar1) goto fail;
   ctx->usermode_bar1_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,

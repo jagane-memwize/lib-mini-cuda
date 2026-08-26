@@ -295,6 +295,12 @@ than a single umbrella:
   no fds, handles or fences.  Keeping this the single source is what makes
   per-architecture work tractable.  Golden-byte tested by
   `tests/unit/mc_methods_test.c`.
+- `hal/arch.h` + `arch/<name>/backend.c` — the per-architecture descriptor:
+  class ids, layout offsets, alignments and capability bits, as plain data.
+  `struct mc_ctx` and `mc_channel_t` each carry a `const mc_arch_desc_t *`,
+  and every class id and arch-varying constant is read through it rather
+  than named at the call site.  Invariant-checked by
+  `tests/unit/mc_arch_desc_test.c`.
 - `hal/method_abi.h` — a `_Static_assert` bank, built from the SDK `DRF_*`
   macros, proving the encodings above are shared by the Ampere, Ada and
   Blackwell classes rather than being Hopper-specific.  If a class ever
