@@ -125,6 +125,38 @@ static void check_one(const mc_arch_desc_t *a)
                "%s: userd_try_get_gpget accepted a NULL out-pointer", a->name);
   }
 
+  /* Compute support is optional -- an architecture may have no backend for it
+   * -- but a partial one is a latent crash: the caller checks the pointer,
+   * not each field. */
+  if (a->compute != NULL) {
+    EXPECT_MSG(a->compute->build_qmd != NULL,
+               "%s: compute ops present but build_qmd is NULL", a->name);
+    EXPECT_MSG(a->compute->qmd_bytes != 0,
+               "%s: compute.qmd_bytes is zero", a->name);
+    EXPECT_MSG(a->compute->qmd_align != 0
+               && (a->compute->qmd_align & (a->compute->qmd_align - 1)) == 0,
+               "%s: compute.qmd_align %u is not a power of two",
+               a->name, a->compute->qmd_align);
+    EXPECT_MSG(a->compute->cbuf_align != 0
+               && (a->compute->cbuf_align & (a->compute->cbuf_align - 1)) == 0,
+               "%s: compute.cbuf_align %u is not a power of two",
+               a->name, a->compute->cbuf_align);
+    EXPECT_MSG(a->compute->version_major != 0,
+               "%s: compute.version_major is zero", a->name);
+
+    /* Build one and check it is not left blank: a builder that silently does
+     * nothing would launch a QMD of zeroes, which SKED dereferences as
+     * program address 0 -- an Xid 31, not an error return. */
+    if (a->compute->build_qmd != NULL && a->compute->qmd_bytes <= 512) {
+      uint8_t  qmd[512] = {0};
+      uint32_t i, nonzero = 0;
+      a->compute->build_qmd(qmd, 0x1234567800ULL, 8, 0x9abcdef00ULL, 0x100);
+      for (i = 0; i < a->compute->qmd_bytes; i++)
+        if (qmd[i] != 0) nonzero++;
+      EXPECT_MSG(nonzero > 0, "%s: build_qmd produced an all-zero QMD", a->name);
+    }
+  }
+
   /* A BAR1-mapped usermode window can only be requested where the class
    * actually takes parameters -- bBar1Mapping lives in that struct.  A
    * backend claiming BAR1 capability without parameters would allocate a

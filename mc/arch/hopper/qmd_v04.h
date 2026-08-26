@@ -22,8 +22,8 @@
  *
  *   uint8_t *qmd  = vidmem_alloc(MC_QMD_BYTES, 0x100);
  *   uint8_t *cb0  = vidmem_alloc(MC_CB0_TOTAL_BYTES_ALIGNED, 0x100);
- *   uint8_t *sass = vidmem_alloc(roundup(mc_doorbell_kernel_sass_len, 256), 0x100);
- *   memcpy(sass, mc_doorbell_kernel_sass, mc_doorbell_kernel_sass_len);
+ *   uint8_t *sass = vidmem_alloc(roundup(MC_DOORBELL_SASS_LEN, 256), 0x100);
+ *   memcpy(sass, mc_doorbell_kernel_sass, MC_DOORBELL_SASS_LEN);
  *
  *   mc_qmd_init(qmd);
  *   mc_qmd_set_global_size(qmd, 1, 1, 1);
@@ -67,33 +67,10 @@
 #define MC_CB0_OFF_USER_DST_HI       0x214u
 #define MC_CB0_OFF_USER_TOKEN        0x218u
 
-/* Initialize a QMD — memset 0 then set NVK's qmd_init defaults
- * (QMD_MAJOR_VERSION=4, QMD_MINOR_VERSION=0,
- *  API_VISIBLE_CALL_LIMIT=NO_CHECK,
- *  SAMPLER_INDEX=INDEPENDENTLY,
- *  QMD_TYPE=GRID_CTA).
- * The buffer must be MC_QMD_BYTES bytes, 256-byte-aligned. */
-void mc_qmd_init(uint8_t *qmd);
-
-/* QMD field setters mirroring NVK's Qmd4_0 trait (one per fill_qmd
- * call).  All of these write into bit-ranges defined by the
- * NVCBC0_QMDV04_00_* macros and sit inside the 384-byte QMD. */
-void mc_qmd_set_barrier_count(uint8_t *qmd, uint8_t n);
-void mc_qmd_set_global_size(uint8_t *qmd, uint32_t w, uint32_t h, uint32_t d);
-void mc_qmd_set_local_size (uint8_t *qmd, uint16_t w, uint16_t h, uint16_t d);
-void mc_qmd_set_prog_addr   (uint8_t *qmd, uint64_t prog_gpu_va);
-void mc_qmd_set_register_count(uint8_t *qmd, uint8_t n);
-void mc_qmd_set_slm_size    (uint8_t *qmd, uint32_t bytes);
-void mc_qmd_set_smem_size   (uint8_t *qmd, uint32_t bytes);
-
-/* Patch QMD V04's CONSTANT_BUFFER(idx) — bind a CB GPU VA + size into
- * the QMD so the SM front-end can fetch `c[0x0][...]` referenced by
- * the kernel's SASS.  Same encoding as NVK's qmd_impl_set_cbuf!
- * (SHIFTED6 for addr, SHIFTED4 for size).
- *
- * Constraints: addr must be 64-byte-aligned (>>6 form), size must be
- * 16-byte-aligned (>>4 form).  idx must be < 8 (Hopper has CB0..CB7). */
-void mc_qmd_set_cbuf(uint8_t *qmd, uint8_t idx, uint64_t addr, uint32_t size);
+/* The QMD field setters are private to qmd_v04.c: they are how a V04 QMD
+ * is assembled, not what a caller asks for.  Callers go through the
+ * architecture's compute ops (hal/arch.h), whose build_qmd covers the one
+ * launch shape libmc uses.  mc_arch_hopper_compute is that table. */
 
 /* CB0 builders.  CB0 is zero-init'd and only the three argument
  * dwords (c[0x0][0x210/0x214/0x218]) are written — the SASS reads
@@ -102,14 +79,8 @@ void mc_qmd_set_cbuf(uint8_t *qmd, uint8_t idx, uint64_t addr, uint32_t size);
 void mc_cb0_init(uint8_t *cb0);
 void mc_cb0_set_args(uint8_t *cb0, uint64_t dst_gpu_va, uint32_t token);
 
-/* Embedded SASS for mc_doorbell_kernel: 256 bytes, 6 effective
- * instructions (LDC, LDC, ULDC, LDC, STG, EXIT) + BRA self + NOPs.
- * REG=8, no LMEM/SMEM/STACK.  Source kernel:
- *   extern "C" __global__
- *   void mc_doorbell_kernel(volatile unsigned int *dst, unsigned int token)
- *   {  *dst = token;  }
- * Compiled with `nvcc -arch=sm_90 --cubin -O0`, .text section extracted. */
-extern const uint8_t  mc_doorbell_kernel_sass[];
-extern const uint32_t mc_doorbell_kernel_sass_len;
+/* The mc_doorbell_kernel SASS now lives in the generated
+ * arch/hopper/doorbell_sass.h, built from kernels/doorbell.cu.
+ * Include that header directly where the bytes are needed. */
 
 #endif /* MC_COMPUTE_QMD_H */

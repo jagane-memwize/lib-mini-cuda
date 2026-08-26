@@ -375,16 +375,10 @@ mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
    * mc_compute_doorbell_kernel — only PROGRAM_ADDRESS and
    * REGISTER_COUNT differ from the embedded-doorbell module.
    * CB0 binding uses MC_CB0_TOTAL_BYTES_ALIGNED for size. */
-  mc_qmd_init(mod->qmd_cpu);
-  mc_qmd_set_global_size   (mod->qmd_cpu, 1, 1, 1);
-  mc_qmd_set_local_size    (mod->qmd_cpu, 1, 1, 1);
-  mc_qmd_set_prog_addr     (mod->qmd_cpu, mod->sass_gpu_va);
-  mc_qmd_set_register_count(mod->qmd_cpu, MC_SM_OWNER_REGS);
-  mc_qmd_set_barrier_count (mod->qmd_cpu, 0);
-  mc_qmd_set_slm_size      (mod->qmd_cpu, 0);
-  mc_qmd_set_smem_size     (mod->qmd_cpu, 0);
-  mc_qmd_set_cbuf(mod->qmd_cpu, /*idx=*/0, mod->cb0_gpu_va,
-                  MC_CB0_TOTAL_BYTES_ALIGNED);
+  compute_ch->arch->compute->build_qmd(mod->qmd_cpu,
+                                       mod->sass_gpu_va, MC_SM_OWNER_REGS,
+                                       mod->cb0_gpu_va,
+                                       MC_CB0_TOTAL_BYTES_ALIGNED);
 
   /* Patch CB0 with the per-call argument tuple.  The kernel reads
    * one u64 (the args-struct GPU VA) at CB0[0x210], then dereferences

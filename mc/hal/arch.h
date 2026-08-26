@@ -158,6 +158,38 @@ typedef struct {
                              mc_arch_role_t role, NvU32 selected_lce);
 } mc_arch_ops_t;
 
+/* ── Compute (QMD) ────────────────────────────────────────────────────────
+ *
+ * The QMD is the structure SKED reads to launch a kernel, and its bit layout
+ * is versioned: Hopper is V04, Ampere V03, Blackwell V05.  These are
+ * different layouts rather than a field shuffle, so a backend supplies a
+ * whole builder.
+ *
+ * The interface is the OPERATION, not the field setters.  libmc needs exactly
+ * one thing from a QMD -- "launch this program, single CTA, single thread,
+ * with constant buffer 0 bound here" -- and the individual setters are an
+ * internal decomposition of that.  Hooking at setter granularity would force
+ * every backend to expose the same decomposition even where its QMD version
+ * does not decompose the same way, and would multiply nine hooks by four
+ * architectures for no gain.
+ *
+ * A NULL compute pointer means the architecture has no compute support in
+ * this build; compute-dependent features are unavailable rather than broken.
+ */
+typedef struct {
+    uint32_t qmd_bytes;     /* size of a QMD image                          */
+    uint32_t qmd_align;     /* required alignment of that image             */
+    uint32_t cbuf_align;    /* required alignment of a bound constant buffer */
+    uint8_t  version_major;
+    uint8_t  version_minor;
+
+    /* Build a complete QMD for a single-CTA, single-thread launch.
+     * `qmd` must be qmd_bytes long and qmd_align-aligned. */
+    void (*build_qmd)(uint8_t *qmd,
+                      uint64_t prog_gpu_va, uint32_t register_count,
+                      uint64_t cb0_gpu_va,  uint32_t cb0_bytes);
+} mc_compute_ops_t;
+
 /* The descriptor proper. */
 struct mc_arch_desc {
     const char      *name;          /* "hopper" — appears in log lines      */
@@ -183,7 +215,8 @@ struct mc_arch_desc {
     struct mc_arch_layout  lay;
     struct mc_arch_caps    cap;
 
-    const mc_arch_ops_t   *ops;
+    const mc_arch_ops_t     *ops;
+    const mc_compute_ops_t  *compute;   /* NULL: no compute support */
 };
 
 /* Backends define one of these.  Ops tables join it in a later step. */

@@ -28,7 +28,8 @@
 
 #include "hal/arch.h"
 
-extern const mc_arch_ops_t mc_arch_hopper_ops;
+extern const mc_arch_ops_t    mc_arch_hopper_ops;
+extern const mc_compute_ops_t mc_arch_hopper_compute;
 #include "internal/types.h"
 
 const mc_arch_desc_t mc_arch_hopper = {
@@ -65,7 +66,8 @@ const mc_arch_desc_t mc_arch_hopper = {
         .gpfifo_entries       = MC_GPFIFO_ENTRIES,
     },
 
-    .ops = &mc_arch_hopper_ops,
+    .ops     = &mc_arch_hopper_ops,
+    .compute = &mc_arch_hopper_compute,
 
     .cap = {
         /* HOPPER_USERMODE_A is RS_OPTIONAL(NV_HOPPER_USERMODE_A_PARAMS) and

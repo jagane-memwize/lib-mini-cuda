@@ -30,8 +30,9 @@
 #include "nvtypes.h"
 #include "class/cla06fsubch.h"          /* NVA06F_SUBCHANNEL_COPY_ENGINE / _COMPUTE */
 #include "ctrl/ctrlc36f.h"              /* NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN */
-#include "arch/hopper/qmd_v04.h"        /* mc_doorbell_kernel_sass — staged once
-                                         * at compute-channel init */
+#include "arch/hopper/qmd_v04.h"
+#include "arch/hopper/doorbell_sass.h"   /* mc_doorbell_kernel_sass — staged
+                                          * once at compute-channel init */
 #include "arch/hopper/sm_owner_sass.h"  /* mc_sm_owner_kernel_sass — second
                                          * embedded kernel; the SM thread
                                          * authors the entire CE-channel
@@ -514,7 +515,7 @@ int mc_compute_channel_init(mc_ctx_t *ctx, mc_vas_t slot)
    * carrier's aperture rule). */
   if (mc_compute_module_init(ctx, slot, &ex->module,
                              mc_doorbell_kernel_sass,
-                             mc_doorbell_kernel_sass_len) != 0)
+                             MC_DOORBELL_SASS_LEN) != 0)
     return -1;
 
   if (mc_compute_module_init(ctx, slot, &ex->sm_owner_module,

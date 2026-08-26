@@ -69,16 +69,9 @@ mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
    * arch/hopper/qmd_v04.h for the setter list.  Single-thread (1,1,1)
    * grid; 8 GPRs (SASS uses up to R5); no SLM/SMEM/barriers.  CB0
    * binds the kernel argument tuple. */
-  mc_qmd_init(mod->qmd_cpu);
-  mc_qmd_set_global_size   (mod->qmd_cpu, 1, 1, 1);
-  mc_qmd_set_local_size    (mod->qmd_cpu, 1, 1, 1);
-  mc_qmd_set_prog_addr     (mod->qmd_cpu, mod->sass_gpu_va);
-  mc_qmd_set_register_count(mod->qmd_cpu, 8);
-  mc_qmd_set_barrier_count (mod->qmd_cpu, 0);
-  mc_qmd_set_slm_size      (mod->qmd_cpu, 0);
-  mc_qmd_set_smem_size     (mod->qmd_cpu, 0);
-  mc_qmd_set_cbuf(mod->qmd_cpu, /*idx=*/0, mod->cb0_gpu_va,
-                  MC_CB0_TOTAL_BYTES_ALIGNED);
+  ch->arch->compute->build_qmd(mod->qmd_cpu,
+                               mod->sass_gpu_va, /*register_count=*/8,
+                               mod->cb0_gpu_va, MC_CB0_TOTAL_BYTES_ALIGNED);
 
   /* CB0: zero-init, then write only the kernel-argument dwords the
    * SASS actually reads (c[0x0][0x210..0x218]). */

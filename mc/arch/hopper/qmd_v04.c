@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "hal/arch.h"
 #include "qmd_v04.h"
 
 /* ── Bit-range write helper ─────────────────────────────────────────
@@ -129,7 +130,7 @@ static void qmd_set_bits(uint8_t *qmd, unsigned hi, unsigned lo, uint64_t value)
 
 /* ── Field setters ─────────────────────────────────────────────────── */
 
-void mc_qmd_init(uint8_t *qmd)
+static void mc_qmd_init(uint8_t *qmd)
 {
     memset(qmd, 0, MC_QMD_BYTES);
 
@@ -148,26 +149,26 @@ void mc_qmd_init(uint8_t *qmd)
     qmd_set_bits(qmd, QMD_TYPE_HI, QMD_TYPE_LO, QMD_TYPE_GRID_CTA);
 }
 
-void mc_qmd_set_barrier_count(uint8_t *qmd, uint8_t n)
+static void mc_qmd_set_barrier_count(uint8_t *qmd, uint8_t n)
 {
     qmd_set_bits(qmd, BARRIER_COUNT_HI, BARRIER_COUNT_LO, n);
 }
 
-void mc_qmd_set_global_size(uint8_t *qmd, uint32_t w, uint32_t h, uint32_t d)
+static void mc_qmd_set_global_size(uint8_t *qmd, uint32_t w, uint32_t h, uint32_t d)
 {
     qmd_set_bits(qmd, GRID_W_HI, GRID_W_LO, w);
     qmd_set_bits(qmd, GRID_H_HI, GRID_H_LO, h);
     qmd_set_bits(qmd, GRID_D_HI, GRID_D_LO, d);
 }
 
-void mc_qmd_set_local_size(uint8_t *qmd, uint16_t w, uint16_t h, uint16_t d)
+static void mc_qmd_set_local_size(uint8_t *qmd, uint16_t w, uint16_t h, uint16_t d)
 {
     qmd_set_bits(qmd, CTA_DIM0_HI, CTA_DIM0_LO, w);
     qmd_set_bits(qmd, CTA_DIM1_HI, CTA_DIM1_LO, h);
     qmd_set_bits(qmd, CTA_DIM2_HI, CTA_DIM2_LO, d);
 }
 
-void mc_qmd_set_prog_addr(uint8_t *qmd, uint64_t prog_gpu_va)
+static void mc_qmd_set_prog_addr(uint8_t *qmd, uint64_t prog_gpu_va)
 {
     /* NVK's qmd_impl_set_prog_addr_64!(clcbc0, QMDV04_00, NONE):
      * no shift — write the full 64-bit VA across LOWER+UPPER. */
@@ -175,12 +176,12 @@ void mc_qmd_set_prog_addr(uint8_t *qmd, uint64_t prog_gpu_va)
     qmd_set_bits(qmd, PROG_ADDR_HI_HI, PROG_ADDR_HI_LO, prog_gpu_va >> 32);
 }
 
-void mc_qmd_set_register_count(uint8_t *qmd, uint8_t n)
+static void mc_qmd_set_register_count(uint8_t *qmd, uint8_t n)
 {
     qmd_set_bits(qmd, REGISTER_COUNT_HI, REGISTER_COUNT_LO, n);
 }
 
-void mc_qmd_set_slm_size(uint8_t *qmd, uint32_t bytes)
+static void mc_qmd_set_slm_size(uint8_t *qmd, uint32_t bytes)
 {
     /* NVK qmd_impl_set_slm_size! with size_suffix=NONE: round up to
      * 0x10 (16-byte multiple), write LOW_SIZE = bytes, HIGH_SIZE = 0. */
@@ -189,7 +190,7 @@ void mc_qmd_set_slm_size(uint8_t *qmd, uint32_t bytes)
     qmd_set_bits(qmd, SLM_LOW_SIZE_HI, SLM_LOW_SIZE_LO, rounded);
 }
 
-void mc_qmd_set_smem_size(uint8_t *qmd, uint32_t bytes)
+static void mc_qmd_set_smem_size(uint8_t *qmd, uint32_t bytes)
 {
     /* NVK qmd_impl_set_smem_size_bounded! rounds up to 0x100 then
      * writes SHARED_MEMORY_SIZE plus MIN/MAX/TARGET_SM_CONFIG_*.
@@ -205,7 +206,7 @@ void mc_qmd_set_smem_size(uint8_t *qmd, uint32_t bytes)
     qmd_set_bits(qmd, SMEM_SIZE_HI, SMEM_SIZE_LO, rounded);
 }
 
-void mc_qmd_set_cbuf(uint8_t *qmd, uint8_t idx, uint64_t addr, uint32_t size)
+static void mc_qmd_set_cbuf(uint8_t *qmd, uint8_t idx, uint64_t addr, uint32_t size)
 {
     /* NVK qmd_impl_set_cbuf!(clcbc0, QMDV04_00, SHIFTED6, SHIFTED4):
      *   addr must be 64-byte-aligned (>>6 form),
@@ -268,28 +269,38 @@ void mc_cb0_set_args(uint8_t *cb0, uint64_t dst_gpu_va, uint32_t token)
  *
  * Resources: REG=8, STACK=0, SHARED=0, LOCAL=0, CONSTANT[0]=540 bytes.
  */
-const uint8_t mc_doorbell_kernel_sass[] = {
-    0x82, 0x7b, 0x01, 0xff, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00,
-    0x00, 0xf0, 0x0f, 0x00, 0x82, 0x7b, 0x05, 0xff, 0x00, 0x86, 0x00, 0x00,
-    0x00, 0x08, 0x00, 0x00, 0x00, 0x22, 0x0e, 0x00, 0xb9, 0x7a, 0x04, 0x00,
-    0x00, 0x82, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0xce, 0x0f, 0x00,
-    0x82, 0x7b, 0x02, 0xff, 0x00, 0x84, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00,
-    0x00, 0x24, 0x0e, 0x00, 0x86, 0x79, 0x00, 0x02, 0x05, 0x00, 0x00, 0x00,
-    0x04, 0x59, 0x11, 0x0c, 0x00, 0xe2, 0x1f, 0x00, 0x4d, 0x79, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x03, 0x00, 0xea, 0x0f, 0x00,
-    0x47, 0x79, 0xfc, 0x00, 0xfc, 0xff, 0xff, 0xff, 0xff, 0xff, 0x83, 0x03,
-    0x00, 0xc0, 0x0f, 0x00, 0x18, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0f, 0x00, 0x18, 0x79, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0f, 0x00,
-    0x18, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0xc0, 0x0f, 0x00, 0x18, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0f, 0x00, 0x18, 0x79, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0f, 0x00,
-    0x18, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0xc0, 0x0f, 0x00, 0x18, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0f, 0x00, 0x18, 0x79, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x0f, 0x00,
-    0x18, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0xc0, 0x0f, 0x00,
+
+
+/* ── The operation the library actually needs ─────────────────────────────
+ *
+ * One QMD, single CTA of a single thread, running `prog_gpu_va` with constant
+ * buffer 0 bound at `cb0_gpu_va`.  Every launch libmc makes has this shape --
+ * both embedded kernels are one-thread kernels -- so this is the whole
+ * compute interface rather than nine separate setters.
+ *
+ * The setters above stay private to this file: they are how a V04 QMD is
+ * assembled, not what a caller asks for.
+ */
+static void hopper_build_qmd(uint8_t *qmd,
+                             uint64_t prog_gpu_va, uint32_t register_count,
+                             uint64_t cb0_gpu_va,  uint32_t cb0_bytes)
+{
+    mc_qmd_init(qmd);
+    mc_qmd_set_global_size   (qmd, 1, 1, 1);
+    mc_qmd_set_local_size    (qmd, 1, 1, 1);
+    mc_qmd_set_prog_addr     (qmd, prog_gpu_va);
+    mc_qmd_set_register_count(qmd, (uint8_t)register_count);
+    mc_qmd_set_barrier_count (qmd, 0);
+    mc_qmd_set_slm_size      (qmd, 0);
+    mc_qmd_set_smem_size     (qmd, 0);
+    mc_qmd_set_cbuf          (qmd, 0, cb0_gpu_va, cb0_bytes);
+}
+
+const mc_compute_ops_t mc_arch_hopper_compute = {
+    .qmd_bytes     = MC_QMD_BYTES,
+    .qmd_align     = 256,
+    .cbuf_align    = 0x100,      /* NVK's min_cbuf_alignment for this class */
+    .version_major = 4,
+    .version_minor = 0,
+    .build_qmd     = hopper_build_qmd,
 };
-const uint32_t mc_doorbell_kernel_sass_len = sizeof(mc_doorbell_kernel_sass);

@@ -22,7 +22,7 @@
 # Override toolchain or flags from the command line:
 #
 #   make CC=clang mc_demo
-#   make NVCC=/opt/cuda/bin/nvcc sm_owner
+#   make NVCC=/opt/cuda/bin/nvcc kernels
 #   make CFLAGS='-O0 -g -fsanitize=address' mc_demo
 
 # ── Toolchain ──────────────────────────────────────────────────────────────
@@ -63,14 +63,6 @@ SDK_INC     := -I$(NVIDIA_SRC)/src/common/sdk/nvidia/inc \
                 -I$(NVIDIA_SRC)/src/nvidia/inc \
                 -I$(NVIDIA_SRC)/kernel-open/nvidia-uvm \
                 -I$(NVIDIA_SRC)/kernel-open/common/inc
-
-# sm_owner kernel build flags.  -O2 is required for nvcc to fold our
-# DRF-style header constants into immediate operands; -O0 leaves them
-# as runtime register loads which still works but obscures the SASS.
-# We pin sm_90 explicitly because Hopper-specific instructions (the
-# .sys store scope) are sm_90+. -lineinfo helps cuobjdump --dump-sass
-# annotate output but is harmless if the user has no debug interest.
-NVCC_KERNEL_FLAGS ?= -arch=sm_90 --cubin -O2 -lineinfo -Imc
 
 # ── Artefacts ──────────────────────────────────────────────────────────────
 # Auto-discovered from source directories — add a file, it builds automatically.
@@ -143,15 +135,18 @@ UNIT_WRAP_mc_init_version_test  := open ioctl close
 # Pure encoding test: links only the emitters, interposes nothing.
 # Pure encoding / pure data: link the backend (and what it pulls in) but
 # interpose nothing -- neither test issues an ioctl.
+# Linking the Hopper descriptor pulls in the tables it points at, and those
+# reach rm_alloc.  One variable, so adding a field to the descriptor does not
+# mean editing every test that touches it.
+HOPPER_BACKEND_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/ops.c \
+                       mc/arch/hopper/qmd_v04.c mc/driver/rm.c
+
 UNIT_WRAP_mc_methods_test       := none
-UNIT_SRCS_mc_methods_test       := mc/hal/methods.c mc/arch/hopper/backend.c \
-                                   mc/arch/hopper/ops.c mc/driver/rm.c
+UNIT_SRCS_mc_methods_test       := mc/hal/methods.c $(HOPPER_BACKEND_SRCS)
 UNIT_WRAP_mc_arch_desc_test     := none
-UNIT_SRCS_mc_arch_desc_test     := mc/arch/hopper/backend.c \
-                                   mc/arch/hopper/ops.c mc/driver/rm.c
+UNIT_SRCS_mc_arch_desc_test     := $(HOPPER_BACKEND_SRCS)
 UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
-                                   mc/arch/hopper/backend.c \
-                                   mc/arch/hopper/ops.c mc/driver/rm.c
+                                   $(HOPPER_BACKEND_SRCS)
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
 # `none` means "interpose nothing": a test that links driver code but never
@@ -215,130 +210,134 @@ bin/%: tests/mc/%.c $(MC_HELPERS) $(LIBMC) | bin
 	    $< $(MC_HELPERS) -L./lib -lmc \
 	    -Wl,-rpath,'$$ORIGIN/../lib'
 
-# ── sm_owner kernel: .cu -> .cubin -> .text bytes -> generated .h ─────────
+# ── Device kernels: .cu -> .cubin -> .text bytes -> generated header ───────
 #
-# The sm_owner kernel (mc/kernels/sm_owner.cu) is a single-thread Hopper
-# kernel that authors an entire CE-channel submission from the SM:
-# pushbuffer methods, GPFIFO entry, USERD GPPut advance, BAR1 doorbell.
-# libmc embeds it as a hex array (mc_sm_owner_kernel_sass[]) consumed
-# by experimental/sm_owner.c.
+# libmc embeds two device kernels as byte arrays:
 #
-# The build is two-stage: nvcc compiles the .cu to a cubin, then the
-# .text.sm_owner_kernel bytes are pulled out into a raw binary and xxd -i
-# wraps them into a C-array source file that we transform into a header.
-# The extraction is done by hand with readelf + dd rather than objcopy, for
-# the reason given below.
+#   sm_owner   a single SM thread authors an entire CE-channel submission --
+#              pushbuffer methods, GPFIFO entry, USERD GPPut, BAR1 doorbell.
+#   doorbell   one thread, one system-scope store.  The minimal demonstration
+#              that an SM store can ring a doorbell and wake PBDMA.
 #
-# We commit the generated header (mc/arch/hopper/sm_owner_sass.h) so a fresh
-# checkout builds without nvcc on the host.  The header is regenerated
-# whenever sm_owner.cu changes; reviewers see the SASS-bytes diff in
-# git, which is the only honest review surface for hand-managed SASS.
-mc/arch/hopper/sm_owner_sass.h: mc/kernels/sm_owner.cu
-	@echo "  NVCC    mc/kernels/sm_owner.cu (-> cubin)"
-	$(NVCC) $(NVCC_KERNEL_FLAGS) -o mc/kernels/sm_owner.cubin $<
-	@echo "  EXTRACT .text.sm_owner_kernel"
-	@# objcopy's BFD doesn't have a backend for NVIDIA CUDA ELFs
-	@# (e_machine = 190 / 0xBE), so we parse the ELF section table
-	@# with readelf -SW (wide format, no name truncation) and dd
-	@# the bytes out by file offset/size.  Columns 5/6 are hex
-	@# offset/size without 0x prefix.
-	@OFF=$$(readelf -SW mc/kernels/sm_owner.cubin                         \
-	        | awk '/\.text\.sm_owner_kernel/ {print "0x"$$5; exit}');     \
-	 SZ=$$(readelf  -SW mc/kernels/sm_owner.cubin                         \
-	        | awk '/\.text\.sm_owner_kernel/ {print "0x"$$6; exit}');     \
-	 if [ -z "$$OFF" ] || [ -z "$$SZ" ]; then                             \
-	   echo "ERROR: could not locate .text.sm_owner_kernel in cubin" >&2; \
-	   exit 1;                                                            \
-	 fi;                                                                  \
-	 dd if=mc/kernels/sm_owner.cubin of=mc/kernels/sm_owner.text.bin      \
-	    bs=1 skip=$$(printf '%d' $$OFF) count=$$(printf '%d' $$SZ) status=none
-	@# Sanity-check: the kernel must emit at least 19 system-scope
-	@# strong-ordered global stores (16 × STG.E.STRONG.SYS for the
-	@# PB method dwords + 1 × STG.E.64.STRONG.SYS for the GPFIFO
-	@# entry + 1 × STG.E.STRONG.SYS for USERD GPPut + 1 × for the
-	@# BAR1 doorbell).  If NVCC ever weakens any of these to plain
-	@# STG.E.SYS or coalesces them, PBDMA could observe PB / GPFIFO
-	@# / USERD writes out of order.  PTX-level we requested
-	@# `st.relaxed.sys.global` which has lowered to STG.E.STRONG.SYS
-	@# (or STG.E.64.STRONG.SYS for u64 stores) on every cuda toolkit
-	@# we've tested (sm_90, CUDA 13.x), but the lowering isn't an
-	@# ABI guarantee — fail the build loudly if it changes rather
-	@# than discovering it as an intermittent runtime failure.
-	@COUNT=$$($(CUOBJDUMP) --dump-sass mc/kernels/sm_owner.cubin             \
-	          | grep -cE 'STG\.E(\.[0-9]+)?\.STRONG\.SYS');               \
-	 if [ "$$COUNT" -lt 19 ]; then                                        \
-	   echo "ERROR: sm_owner.cubin contains only $$COUNT STG.E.*STRONG.SYS"\
-	        " instructions; expected >= 19 (16 PB + GPFIFO + GPPut +"     \
-	        " doorbell).  NVCC may have weakened a store; re-check"       \
-	        " sm_owner.cu inline PTX and cuobjdump --dump-sass." >&2;     \
-	   exit 1;                                                            \
-	 fi
-	@# The optional on-GPU DMA-sema poll loop (compiled in, disabled at
-	@# run time — the host passes dma_sema_poll_va = 0) is `__threadfence_system()`
-	@# + `ld.global.cg`, which lowers to MEMBAR.SC.SYS + LDG.E.STRONG.GPU
-	@# on Hopper.  The LDG bypasses L1 (.cg cache class), the MEMBAR
-	@# provides system-scope ordering — the combination is what makes
-	@# the SM observe PBDMA's CE-released sema (proven by the N=1000
-	@# stability sweep; see libcuda-research docs/findings.md under
-	@# "FB-carrier and cross-engine ordering").
-	@# Earlier `.relaxed.sys` lowering to LDG.E.STRONG.SYS spun on
-	@# stale L1 forever.
-	@# Gate on both the GPU-scope LDG inside the loop AND at least one
-	@# MEMBAR.SC.SYS — losing either would silently break the
-	@# cross-engine handshake.
-	@LCOUNT=$$($(CUOBJDUMP) --dump-sass mc/kernels/sm_owner.cubin            \
-	          | grep -cE 'LDG\.E(\.[0-9]+)?\.STRONG\.GPU');                \
-	 if [ "$$LCOUNT" -lt 1 ]; then                                        \
-	   echo "ERROR: sm_owner.cubin contains 0 LDG.E.*STRONG.GPU"          \
-	        " instructions; the FB DMA-sema poll loop's"                  \
-	        " ld.global.cg did not lower to a GPU-scope strong load." >&2;\
-	   exit 1;                                                            \
-	 fi
-	@MCOUNT=$$($(CUOBJDUMP) --dump-sass mc/kernels/sm_owner.cubin            \
-	          | grep -cE 'MEMBAR\.SC\.SYS');                               \
-	 if [ "$$MCOUNT" -lt 1 ]; then                                        \
-	   echo "ERROR: sm_owner.cubin contains 0 MEMBAR.SC.SYS"              \
-	        " instructions; the per-iter __threadfence_system() in the"   \
-	        " poll loop did not lower to a system-scope memory barrier." >&2; \
-	   exit 1;                                                            \
-	 fi
-	@echo "  GEN     $@"
-	@(  echo '/*';                                                        \
-	    echo ' * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.'; \
-	    echo ' * SPDX-License-Identifier: MIT';                           \
-	    echo ' *';                                                        \
-	    echo ' * sm_owner_sass.h — auto-generated by the libmc Makefile';\
-	    echo ' *';                                                        \
-	    echo ' * Source: mc/kernels/sm_owner.cu';                         \
-	    echo ' * Compiled with: $(NVCC) $(NVCC_KERNEL_FLAGS)';            \
-	    echo ' *';                                                        \
-	    echo ' * DO NOT EDIT BY HAND.  To regenerate, modify sm_owner.cu';\
-	    echo ' * and run `make mc/arch/hopper/sm_owner_sass.h` from the repository root.'; \
-	    echo ' */';                                                       \
-	    echo '#ifndef MC_SM_OWNER_SASS_H';                                \
-	    echo '#define MC_SM_OWNER_SASS_H';                                \
-	    echo '';                                                          \
-	    echo '#include <stdint.h>';                                       \
-	    echo '';                                                          \
-	    SIZE=$$(stat -c '%s' mc/kernels/sm_owner.text.bin);               \
-	    REGS=$$($(CUOBJDUMP) --dump-resource-usage                        \
-	            mc/kernels/sm_owner.cubin 2>&1                            \
-	            | sed -n 's/.*REG:\([0-9]*\).*/\1/p' | head -1);          \
-	    echo "/* SASS byte length and register count, harvested from cubin. */"; \
-	    echo "#define MC_SM_OWNER_SASS_LEN ((uint32_t)$$SIZE)";          \
-	    echo "#define MC_SM_OWNER_REGS     ((uint32_t)$$REGS)";          \
-	    echo '';                                                          \
-	    echo "static const uint8_t mc_sm_owner_kernel_sass[] = {";       \
-	    xxd -i < mc/kernels/sm_owner.text.bin;                            \
-	    echo "};";                                                        \
-	    echo '';                                                          \
-	    echo "#endif /* MC_SM_OWNER_SASS_H */";                           \
-	) > $@
-	@rm -f mc/kernels/sm_owner.text.bin
-	@echo "  OK      $@ ($$(stat -c '%s' $@) bytes)"
+# Both follow the same pipeline, so it is written once here and instantiated
+# per kernel.  The generated headers are committed so a fresh checkout builds
+# without nvcc; regenerating them is `make kernels`.  Reviewers see the SASS
+# bytes diff in git, which is the only honest review surface for hand-managed
+# machine code.
+#
+# Per-kernel knobs:
+#   KERNEL_OPT_<name>      nvcc optimisation level.
+#   KERNEL_ASSERTS_<name>  space-separated REGEX:MINIMUM pairs.  Each is
+#                          grepped against the disassembly and the build fails
+#                          if the mnemonic appears fewer than MINIMUM times.
+#
+# The assertions are the load-bearing part.  What matters about these kernels
+# is not what they compute but the SCOPE and ORDERING of their stores, and
+# that is a property of nvcc's lowering rather than anything the source can
+# guarantee.  A toolkit that weakened STG.E.STRONG.SYS to a plain store, or
+# coalesced the pushbuffer writes, would produce a kernel that still compiles
+# and still looks right but lets PBDMA observe the pushbuffer, GPFIFO entry
+# and USERD update out of order.  Failing the build is much cheaper than
+# discovering that as an intermittent hang.
+#
+# The mnemonics below are sm_90 spellings established by running
+# `cuobjdump --dump-sass` on real output.  A different -arch may spell them
+# differently; establish the replacements from a real run rather than
+# guessing, and record the evidence.
 
-# Convenience target so `make sm_owner` does the right thing.
-.PHONY: sm_owner
+KERNELS := sm_owner doorbell
+
+# sm_owner: -O2 so nvcc folds the DRF-derived constants into immediates.
+KERNEL_OPT_sm_owner     := -O2
+# >= 19 system-scope strong stores: 16 pushbuffer method dwords + the 64-bit
+# GPFIFO entry + USERD GPPut + the doorbell.  >= 1 GPU-scope strong load for
+# the optional on-GPU semaphore poll (an earlier .relaxed.sys lowering became
+# LDG.E.STRONG.SYS and spun on stale L1 forever).  >= 1 system-scope membar
+# from __threadfence_system().
+KERNEL_ASSERTS_sm_owner := 'STG\.E(\.[0-9]+)?\.STRONG\.SYS:19' \
+                           'LDG\.E(\.[0-9]+)?\.STRONG\.GPU:1' \
+                           'MEMBAR\.SC\.SYS:1'
+
+# doorbell: -O0.  Nothing to fold, and it keeps the SASS a literal
+# transcription of the source, which is what makes the bytes reviewable.
+KERNEL_OPT_doorbell     := -O0
+# The single store must reach system scope, or it sits in L1 and the doorbell
+# is never rung.
+KERNEL_ASSERTS_doorbell := 'STG\.E(\.[0-9]+)?\.STRONG\.SYS:1'
+
+NVCC_ARCH        ?= sm_90
+NVCC_KERNEL_BASE ?= -arch=$(NVCC_ARCH) --cubin -lineinfo -Imc
+
+define KERNEL_RULE
+mc/arch/hopper/$(1)_sass.h: mc/kernels/$(1).cu
+	@echo "  NVCC    mc/kernels/$(1).cu (-> cubin)"
+	$$(NVCC) $$(NVCC_KERNEL_BASE) $$(KERNEL_OPT_$(1)) \
+	    -o mc/kernels/$(1).cubin $$<
+	@echo "  EXTRACT .text.mc_$(1)_kernel"
+	@# objcopy's BFD has no backend for NVIDIA CUDA ELFs (e_machine = 190),
+	@# so parse the section table with readelf -SW and dd the bytes out by
+	@# file offset/size.  Columns 5/6 are hex, no 0x prefix.
+	@sec=$$$$(readelf -SW mc/kernels/$(1).cubin 2>/dev/null                 \
+	         | awk '/\.text\.[a-z_]*$(1)_kernel/ {print $$$$5" "$$$$6; exit}'); \
+	 OFF=$$$${sec%% *}; SZ=$$$${sec##* };                                   \
+	 if [ -z "$$$$OFF" ] || [ -z "$$$$SZ" ]; then                           \
+	   echo "ERROR: no .text section for $(1)_kernel in the cubin" >&2;     \
+	   exit 1;                                                              \
+	 fi;                                                                    \
+	 dd if=mc/kernels/$(1).cubin of=mc/kernels/$(1).text.bin                \
+	    bs=1 skip=$$$$((0x$$$$OFF)) count=$$$$((0x$$$$SZ)) status=none
+	@for spec in $$(KERNEL_ASSERTS_$(1)); do                                \
+	   re=$$$${spec%:*}; min=$$$${spec##*:};                                \
+	   n=$$$$($$(CUOBJDUMP) --dump-sass mc/kernels/$(1).cubin               \
+	          | grep -cE "$$$$re" || true);                                 \
+	   if [ "$$$$n" -lt "$$$$min" ]; then                                   \
+	     echo "ERROR: $(1) cubin has $$$$n instruction(s) matching"         \
+	          "'$$$$re'; expected >= $$$$min.  NVCC may have weakened or"   \
+	          "coalesced a store -- inspect with"                           \
+	          "cuobjdump --dump-sass mc/kernels/$(1).cubin" >&2;            \
+	     exit 1;                                                            \
+	   fi;                                                                  \
+	   echo "  ASSERT  $(1): $$$$n x $$$$re (>= $$$$min)";                  \
+	 done
+	@echo "  GEN     $$@"
+	@u=$$$$(echo $(1) | tr 'a-z' 'A-Z');                                    \
+	(  echo '/*';                                                           \
+	   echo ' * SPDX-FileCopyrightText: Copyright (c) 2026 Cisco and/or its affiliates.'; \
+	   echo ' * SPDX-License-Identifier: MIT';                              \
+	   echo ' *';                                                           \
+	   echo " * $(1)_sass.h — auto-generated by the libmc Makefile";        \
+	   echo ' *';                                                           \
+	   echo ' * Source: mc/kernels/$(1).cu';                                \
+	   echo " * Compiled with: nvcc $$(NVCC_KERNEL_BASE) $$(KERNEL_OPT_$(1))"; \
+	   echo ' *';                                                           \
+	   echo ' * DO NOT EDIT BY HAND.  Modify the .cu and run `make kernels`.'; \
+	   echo ' */';                                                          \
+	   echo "#ifndef MC_$$$${u}_SASS_H";                                    \
+	   echo "#define MC_$$$${u}_SASS_H";                                    \
+	   echo '';                                                             \
+	   echo '#include <stdint.h>';                                          \
+	   echo '';                                                             \
+	   size=$$$$(stat -c '%s' mc/kernels/$(1).text.bin);                    \
+	   regs=$$$$($$(CUOBJDUMP) --dump-resource-usage mc/kernels/$(1).cubin  \
+	           2>&1 | sed -n 's/.*REG:\([0-9]*\).*/\1/p' | head -1);        \
+	   echo "/* SASS byte length and register count, harvested from the cubin. */"; \
+	   echo "#define MC_$$$${u}_SASS_LEN ((uint32_t)$$$$size)";             \
+	   echo "#define MC_$$$${u}_REGS     ((uint32_t)$$$$regs)";             \
+	   echo '';                                                             \
+	   echo "static const uint8_t mc_$(1)_kernel_sass[] = {";               \
+	   xxd -i < mc/kernels/$(1).text.bin;                                   \
+	   echo "};";                                                           \
+	   echo '';                                                             \
+	   echo "#endif /* MC_$$$${u}_SASS_H */";                               \
+	) > $$@
+	@rm -f mc/kernels/$(1).text.bin
+	@echo "  OK      $$@ ($$$$(stat -c '%s' $$@) bytes)"
+endef
+$(foreach k,$(KERNELS),$(eval $(call KERNEL_RULE,$k)))
+
+.PHONY: kernels sm_owner
+kernels: $(foreach k,$(KERNELS),mc/arch/hopper/$(k)_sass.h)
+# Back-compat alias.
 sm_owner: mc/arch/hopper/sm_owner_sass.h
 
 # libmc: the ioctl + submission machinery behind a small
@@ -467,7 +466,7 @@ help:
 	@echo "  check-nvidia-source  validate NVIDIA_SRC is driver $(MC_NVIDIA_VERSION)"
 	@echo "  test-unit        run host-only unit tests (auto-discovered)"
 	@echo "  check-abi        verify exported symbols match mc.h's MC_API set"
-	@echo "  sm_owner         regenerate mc/arch/hopper/sm_owner_sass.h from the kernel"
+	@echo "  kernels          regenerate the embedded device-kernel SASS headers"
 	@echo "  clean            remove bin/ and lib/ directories"
 	@echo "  help             this message"
 	@echo
