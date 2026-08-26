@@ -97,7 +97,7 @@ LIBMC_MAP    := mc/libmc.map
 # per-architecture code; experimental/ holds the research paths.
 MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
                 mc/core/memcpy.c mc/core/vaspace.c
-MC_HAL_SRCS  := mc/hal/submit.c
+MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
 MC_ARCH_SRCS := mc/arch/hopper/qmd_v04.c
 MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c \
@@ -138,6 +138,8 @@ UNIT_SRCS_mc_rm_version_test    := mc/driver/rm.c
 UNIT_WRAP_mc_lce_selection_test := ioctl
 UNIT_SRCS_mc_lce_selection_test := mc/driver/rm.c
 UNIT_WRAP_mc_init_version_test  := open ioctl close
+# Pure encoding test: links only the emitters, interposes nothing.
+UNIT_SRCS_mc_methods_test       := mc/hal/methods.c
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
 unit_wrap = $(if $(UNIT_WRAP_$(1)),$(UNIT_WRAP_$(1)),$(UNIT_WRAP_DEFAULT))
@@ -334,9 +336,15 @@ sm_owner: mc/arch/hopper/sm_owner_sass.h
 #                            object allocators).  Hosts mc_debug() too.
 #   driver/uvm.c             UVM ioctl wrappers (initialize, register/unregister,
 #                            map/unmap external allocation, register channel).
-#   hal/submit.c             method-stream + GPFIFO entry builders +
-#                            mc_channel_arm/submit/poll_sema + drain_channel.
-#                            The only TU that names the USERD class struct.
+#   hal/methods.c            every GPU method word libmc emits (CE copy
+#                            stream, GPFIFO entries, compute setup/launch).
+#                            Pure encoding: no fds, handles or fences.
+#                            Includes hal/method_abi.h, whose _Static_assert
+#                            bank proves the encodings are shared across the
+#                            Ampere/Ada/Hopper/Blackwell classes.
+#   hal/submit.c             submission mechanics: produce -> fence -> publish,
+#                            USERD accessors, doorbell, semaphore polling,
+#                            drain.  The only TU naming the USERD struct.
 #   core/context.c           mc_init / mc_fini.
 #   core/channel.c           per-kind channel bring-up and teardown.
 #   core/alloc.c             allocation table + mc_malloc_* / mc_free /

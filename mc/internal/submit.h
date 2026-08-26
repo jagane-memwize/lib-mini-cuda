@@ -29,12 +29,8 @@ uint32_t *mc_write_transfer_methods(uint32_t *pb,
                                     uint32_t nbytes,
                                     uint64_t sema_va, uint32_t sema_payload);
 
-/* GPFIFO-entry builder + USERD GPPut bump.  Both used by submit
- * primitives but are useful standalone for tests/diagnostics. */
-uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
-                        uint32_t gp_put_index, uint32_t ring_entries,
-                        uintptr_t pb_cpu_va, uint32_t pb_offset,
-                        uint32_t method_bytes);
+/* USERD GPPut bump + BAR1 doorbell ring, in that order, fenced.
+ * The method-stream and GPFIFO-entry emitters live in hal/methods.h. */
 void     ring_doorbell(void *userd,
                        uint32_t new_gp_put,
                        volatile uint32_t *vf_doorbell,

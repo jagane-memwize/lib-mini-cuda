@@ -41,112 +41,9 @@
 #include "internal/vaspace.h"
 #include "internal/alloc.h"
 #include "internal/compute.h"
+#include "hal/methods.h"
 #include "arch/hopper/qmd_v04.h"
 
-/*
- * Method-stream header for the compute subchannel.  Same encoding
- * as the CE-side INCR_HEADER_SUB in hal/submit.c, but pinned to
- * NVA06F_SUBCHANNEL_COMPUTE (= 1) instead of COPY_ENGINE (= 4).
- * Macros are file-scoped so duplication is harmless.
- */
-#define INCR_HEADER_COMPUTE_SUB(method, count, subch)  \
-  (DRF_DEF(C36F, _DMA_INCR, _OPCODE, _VALUE)           \
-   | DRF_NUM(C36F, _DMA_INCR, _COUNT, (count))         \
-   | DRF_NUM(C36F, _DMA_INCR, _SUBCHANNEL, (subch))    \
-   | DRF_NUM(C36F, _DMA_INCR, _ADDRESS, (method) >> 2))
-#define INCR_HEADER_COMPUTE(method, count) \
-  INCR_HEADER_COMPUTE_SUB((method), (count), NVA06F_SUBCHANNEL_COMPUTE)
-
-/* ── HOPPER_COMPUTE_A method-stream builders ──────────────────────────
- *
- * Per-channel one-time setup, modelled on Mesa NVK's
- * `nvk_push_dispatch_state_init` (vulkan/nvk_cmd_dispatch.c:31-89) +
- * `nvk_cmd_buffer_begin_compute` (same file:99-115).  NVK proves that
- * launching a Hopper compute kernel does NOT require the libcuda-only
- * MME bytecode burst, the SET_CWD_REF_COUNTER ramp, the SET_SPA_VERSION
- * / SET_QMD_VERSION / SET_RESERVED_SW_METHOD07 / SET_VALID_SPAN_OVERFLOW
- * methods, or the texture-pool methods.
- *
- * The minimal NVK-style setup is:
- *   - SET_OBJECT(HOPPER_COMPUTE_A)
- *   - INVALIDATE_SKED_CACHES                        (clear stale QMD cache)
- *   - INVALIDATE_SAMPLER_CACHE_NO_WFI(LINES_ALL=0)
- *   - INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI(LINES_ALL=0)
- *   - SET_SHADER_SHARED_MEMORY_WINDOW_A/B = 0x400000000 (16 GiB)
- *       Hopper requires this NON-ZERO and 4 GiB-aligned.  The window
- *       is 4 GiB WIDE on Hopper: every GPU VA in [base, base + 4 GiB)
- *       is intercepted as SMEM by the SM front-end and never reaches
- *       the GMMU as a global store.  NVK uses 1<<32 because its Vulkan
- *       heap avoids that range, but mc's dma_ch carrier
- *       (NV50_MEMORY_VIRTUAL) lands at GPU VA ~0x120000000 and the
- *       va_pool at 0x200000000 — both inside a 4 GiB window starting
- *       at 1<<32.  16 GiB is well above any mc VA.
- *   - SET_SHADER_LOCAL_MEMORY_WINDOW_A/B = 0xffULL << 24 (NVK constant)
- */
-static uint32_t *mc_write_compute_setup_methods(uint32_t *pb)
-{
-  uint64_t smem_window = 0x400000000ULL;     /* 16 GiB; above all mc VAs */
-  uint64_t lmem_window = 0xffULL << 24;      /* NVK constant */
-
-  *pb++ = INCR_HEADER_COMPUTE_SUB(NVC86F_SET_OBJECT, 1, NVA06F_SUBCHANNEL_COMPUTE);
-  *pb++ = HOPPER_COMPUTE_A;
-
-  /* INVALIDATE_SKED_CACHES (no payload bits matter — V=0 means
-   * "invalidate now"; NVK passes 0). */
-  *pb++ = INCR_HEADER_COMPUTE(NVB1C0_INVALIDATE_SKED_CACHES, 1);
-  *pb++ = 0;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVA0C0_INVALIDATE_SAMPLER_CACHE_NO_WFI, 1);
-  *pb++ = NVA0C0_INVALIDATE_SAMPLER_CACHE_NO_WFI_LINES_ALL;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVA0C0_INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI, 1);
-  *pb++ = NVA0C0_INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI_LINES_ALL;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_SHADER_SHARED_MEMORY_WINDOW_A, 2);
-  *pb++ = (NvU32)(smem_window >> 32);
-  *pb++ = (NvU32)(smem_window & 0xffffffffu);
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_SHADER_LOCAL_MEMORY_WINDOW_A, 2);
-  *pb++ = (NvU32)(lmem_window >> 32);
-  *pb++ = (NvU32)(lmem_window & 0xffffffffu);
-
-  return pb;
-}
-
-/* mc_write_compute_launch_methods — submit one QMD via SEND_PCAS_A.
- * The setup methods above have already been emitted on the channel
- * (gated by `compute_ch.setup_done`), so this builder doesn't repeat
- * SET_OBJECT.  NVK's launch path also does not re-emit it per-dispatch
- * (vulkan/nvk_cmd_dispatch.c:328-340 / 387-401). */
-static uint32_t *mc_write_compute_launch_methods(uint32_t *pb,
-                                                  uint64_t qmd_gpu_va,
-                                                  uint64_t sema_va,
-                                                  uint32_t sema_payload)
-{
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SEND_PCAS_A, 1);
-  *pb++ = (NvU32)(qmd_gpu_va >> 8);
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SEND_SIGNALING_PCAS2_B, 1);
-  *pb++ = 0x0000000a;                /* SCHEDULE | <bit 3>; verified
-                                      * working on H100.  NVK uses
-                                      * PCAS_ACTION_INVALIDATE_COPY_SCHEDULE
-                                      * (= 0x3) which also works on
-                                      * this driver. */
-
-  /* Release semaphore after the kernel completes.  4-method incr
-   * write; A=offset_upper, B=offset_lower, C=payload, D=control word
-   * (RELEASE | FOUR_WORDS | FLUSH_DISABLE=FALSE). */
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_REPORT_SEMAPHORE_A, 4);
-  *pb++ = DRF_NUM(C7C0, _SET_REPORT_SEMAPHORE_A, _OFFSET_UPPER,
-                  (NvU32)(sema_va >> 32));
-  *pb++ = (NvU32)sema_va;
-  *pb++ = sema_payload;
-  *pb++ = DRF_DEF(C7C0, _SET_REPORT_SEMAPHORE_D, _OPERATION, _RELEASE)
-        | DRF_DEF(C7C0, _SET_REPORT_SEMAPHORE_D, _STRUCTURE_SIZE, _ONE_WORD)
-        | DRF_DEF(C7C0, _SET_REPORT_SEMAPHORE_D, _FLUSH_DISABLE, _FALSE);
-
-  return pb;
-}
 
 /* mc_compute_doorbell_kernel — submit the embedded mc_doorbell_kernel
  * SASS on the compute channel.  See mc.h for the full contract. */
@@ -225,12 +122,17 @@ mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
   pb = ch->pb_cpu;
   if (!ex->setup_done)
   {
-    pb = mc_write_compute_setup_methods(pb);
+    pb = mc_compute_write_setup(pb);
     ex->setup_done = true;
   }
-  pb_end = mc_write_compute_launch_methods(pb, mod->qmd_gpu_va,
-                                           ch->sema_gpu_va,
-                                           ch->sema_payload);
+  /* invalidate_caches = false: every caller of this path passes identical
+   * CB0 arguments on every launch (dst_va is the constant doorbell address
+   * and token is the constant work-submit token), so the SM's constant cache
+   * returning a prior launch's bytes is harmless here. */
+  pb_end = mc_compute_write_launch(pb, mod->qmd_gpu_va,
+                                   ch->sema_gpu_va,
+                                   ch->sema_payload,
+                                   false);
   copy_bytes = (uint32_t)((pb_end - ch->pb_cpu) * sizeof(uint32_t));
 
   return mc_channel_submit(ch, ctx->vf_doorbell, copy_bytes);

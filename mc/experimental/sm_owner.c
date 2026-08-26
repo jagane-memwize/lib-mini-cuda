@@ -61,6 +61,7 @@
 #include "internal/submit.h"
 #include "internal/vaspace.h"
 #include "internal/compute.h"
+#include "hal/methods.h"
 #include "arch/hopper/qmd_v04.h"
 #include "kernels/sm_owner_args.h"
 #include "arch/hopper/sm_owner_sass.h"
@@ -138,100 +139,6 @@ _Static_assert(offsetof(struct mc_sm_owner_args, dma_sema_poll_budget)   == 84,
 #define MC_SMO_OFF_ARGS_PTR            0x210u
 #define MC_SMO_ARGS_CB0_OFFSET         0x300u
 
-/* ── Compute pushbuffer header macro (mirrors experimental/compute.c) ──────── */
-#define INCR_HEADER_COMPUTE(method, count)                 \
-  (DRF_DEF(C36F, _DMA_INCR, _OPCODE, _VALUE)               \
-   | DRF_NUM(C36F, _DMA_INCR, _COUNT, (count))             \
-   | DRF_NUM(C36F, _DMA_INCR, _SUBCHANNEL,                 \
-             NVA06F_SUBCHANNEL_COMPUTE)                    \
-   | DRF_NUM(C36F, _DMA_INCR, _ADDRESS, (method) >> 2))
-
-/* ── Per-channel one-time compute setup methods ─────────────────────────
- *
- * Same recipe as mc_write_compute_setup_methods in experimental/compute.c.
- * Duplicated here (rather than exposed across TUs) because both files
- * are tightly coupled to their kernel-launch pattern and the setup is
- * <30 lines.  Both call sites share the `setup_done` flag in
- * mc_compute_extras so the methods only emit once per channel — the
- * DMA channel's PBDMA does not care which compute kernel executes
- * after SET_OBJECT, and HOPPER_COMPUTE_A binding is sticky.
- */
-static uint32_t *write_compute_setup_methods(uint32_t *pb)
-{
-  uint64_t smem_window = 0x400000000ULL;     /* 16 GiB; above all mc VAs */
-  uint64_t lmem_window = 0xffULL << 24;      /* NVK constant */
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC86F_SET_OBJECT, 1);
-  *pb++ = HOPPER_COMPUTE_A;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVB1C0_INVALIDATE_SKED_CACHES, 1);
-  *pb++ = 0;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVA0C0_INVALIDATE_SAMPLER_CACHE_NO_WFI, 1);
-  *pb++ = NVA0C0_INVALIDATE_SAMPLER_CACHE_NO_WFI_LINES_ALL;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVA0C0_INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI, 1);
-  *pb++ = NVA0C0_INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI_LINES_ALL;
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_SHADER_SHARED_MEMORY_WINDOW_A, 2);
-  *pb++ = (NvU32)(smem_window >> 32);
-  *pb++ = (NvU32)(smem_window & 0xffffffffu);
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_SHADER_LOCAL_MEMORY_WINDOW_A, 2);
-  *pb++ = (NvU32)(lmem_window >> 32);
-  *pb++ = (NvU32)(lmem_window & 0xffffffffu);
-
-  return pb;
-}
-static uint32_t *write_compute_launch_methods(uint32_t *pb,
-                                              uint64_t qmd_gpu_va,
-                                              uint64_t sema_va,
-                                              uint32_t sema_payload)
-{
-  /* Per-launch INVALIDATE_SHADER_CACHES_NO_WFI(CONSTANT=TRUE).
-   *
-   * The SM front-end's constant cache holds prior CB0 reads keyed
-   * by GPU VA.  Because we reuse the SAME CB0 GPU VA across every
-   * launch and patch its contents per-call, the cache will return
-   * stale bytes from a prior launch unless explicitly invalidated.
-   *
-   * Symptom without this method: iter 0 succeeds, iter 1+ wedges.
-   * Iter 1's kernel reads iter 0's gp_put_in and sema_payload, so
-   * the SM's USERD GPPut store is a no-op (writes the same value
-   * already there) and PBDMA never wakes.  The dma_ch sema stays at
-   * 0 and times out.
-   *
-   * The existing mc_compute_doorbell_kernel path didn't expose this
-   * because all its callers pass identical CB0 args every iter
-   * (dst_va = const doorbell, token = const work_submit_token).
-   * mc_sm_owner_submit_d2h is the first multi-arg-per-iter consumer.
-   *
-   * NO_WFI variant: don't stall the engine waiting for inflight
-   * compute to drain.  We're at the start of a new launch; nothing
-   * is inflight on this channel since the prior launch already
-   * fired its release sema before we polled it. */
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_INVALIDATE_SHADER_CACHES_NO_WFI, 1);
-  *pb++ = DRF_DEF(C7C0, _INVALIDATE_SHADER_CACHES_NO_WFI, _CONSTANT,    _TRUE)
-        | DRF_DEF(C7C0, _INVALIDATE_SHADER_CACHES_NO_WFI, _GLOBAL_DATA, _TRUE);
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SEND_PCAS_A, 1);
-  *pb++ = (NvU32)(qmd_gpu_va >> 8);
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SEND_SIGNALING_PCAS2_B, 1);
-  *pb++ = 0x0000000a;                /* SCHEDULE | <bit 3>; verified working
-                                      * — same value experimental/compute.c uses. */
-
-  *pb++ = INCR_HEADER_COMPUTE(NVC7C0_SET_REPORT_SEMAPHORE_A, 4);
-  *pb++ = DRF_NUM(C7C0, _SET_REPORT_SEMAPHORE_A, _OFFSET_UPPER,
-                  (NvU32)(sema_va >> 32));
-  *pb++ = (NvU32)sema_va;
-  *pb++ = sema_payload;
-  *pb++ = DRF_DEF(C7C0, _SET_REPORT_SEMAPHORE_D, _OPERATION, _RELEASE)
-        | DRF_DEF(C7C0, _SET_REPORT_SEMAPHORE_D, _STRUCTURE_SIZE, _ONE_WORD)
-        | DRF_DEF(C7C0, _SET_REPORT_SEMAPHORE_D, _FLUSH_DISABLE, _FALSE);
-
-  return pb;
-}
 
 /* ── Build the sm_owner_kernel argument tuple ─────────────────────────
  *
@@ -533,12 +440,17 @@ mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
   pb = compute_ch->pb_cpu;
   if (!cex->setup_done)
   {
-    pb = write_compute_setup_methods(pb);
+    pb = mc_compute_write_setup(pb);
     cex->setup_done = true;
   }
-  pb_end = write_compute_launch_methods(pb, mod->qmd_gpu_va,
-                                        compute_ch->sema_gpu_va,
-                                        compute_ch->sema_payload);
+  /* invalidate_caches = true: this path patches CB0 per call (gp_put_in,
+   * sema_payload and the copy addresses all change between launches) while
+   * reusing one CB0 GPU VA, so the constant cache must be invalidated or
+   * iteration 1 reads iteration 0's arguments and wedges. */
+  pb_end = mc_compute_write_launch(pb, mod->qmd_gpu_va,
+                                   compute_ch->sema_gpu_va,
+                                   compute_ch->sema_payload,
+                                   true);
   copy_bytes = (uint32_t)((pb_end - compute_ch->pb_cpu) * sizeof(uint32_t));
 
   /* Submit on the compute channel: rings the host doorbell, polls

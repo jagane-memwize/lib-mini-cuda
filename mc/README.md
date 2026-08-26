@@ -240,7 +240,7 @@ FB-carrier path) and `tests/mc/mc_sm_owner_demo.c`.
 
 ## Reference — source layout
 
-The library is split into eleven translation units plus the embedded
+The library is split into twelve translation units plus the embedded
 SM-owner kernel, grouped by layer:
 
 ```
@@ -289,10 +289,20 @@ than a single umbrella:
 - `driver/uvm.c` — UVM ioctl wrappers (`uvm_setup`,
   `uvm_register_channel`, `uvm_map_buffer*`, `uvm_unmap_buffer`,
   `uvm_unregister_*`).
-- `hal/submit.c` — method-stream + GPFIFO entry builders
-  (`mc_write_transfer_methods`, `write_gp_entry`, `ring_doorbell`) +
-  channel submission primitives (`mc_channel_arm/submit/poll_sema`) +
-  `drain_channel`.  No fds or RM handles opened here.
+- `hal/methods.c` — every GPU method word libmc emits:
+  `mc_write_transfer_methods` (CE copy), `write_gp_entry`,
+  `mc_compute_write_setup` and `mc_compute_write_launch`.  Pure encoding —
+  no fds, handles or fences.  Keeping this the single source is what makes
+  per-architecture work tractable.  Golden-byte tested by
+  `tests/unit/mc_methods_test.c`.
+- `hal/method_abi.h` — a `_Static_assert` bank, built from the SDK `DRF_*`
+  macros, proving the encodings above are shared by the Ampere, Ada and
+  Blackwell classes rather than being Hopper-specific.  If a class ever
+  moves a field, the build fails and names it.
+- `hal/submit.c` — submission mechanics: `mc_channel_arm`/`submit`/
+  `poll_sema`, `ring_doorbell`, `drain_channel`, and the `mc_userd_*`
+  accessors.  The only TU that names the USERD class struct.  No fds or RM
+  handles opened here.
 - `core/vaspace.c` — VA pool (`va_pool_init`, `va_pool_reserve`) +
   carrier VA space helpers (`mc_va_space_init_uvm`,
   `mc_va_space_init_carrier`, `mc_va_space_init_carrier_fb`,
