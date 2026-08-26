@@ -14,6 +14,7 @@
  * the GPU.  As backends land, each is added to `all_backends` below and
  * inherits the whole set.
  */
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -95,6 +96,34 @@ static void check_one(const mc_arch_desc_t *a)
              "%s: vidmem_align_bytes is not a power of two", a->name);
   EXPECT_MSG(a->lay.usermode_window_bytes != 0,
              "%s: usermode_window_bytes is zero", a->name);
+
+  /* Every hook must be present.  These are called without a NULL check on
+   * the hot path -- a missing one is a null dereference inside submission,
+   * which is a far worse failure than a build error. */
+  EXPECT_MSG(a->ops != NULL, "%s: has no ops table", a->name);
+  if (a->ops != NULL) {
+    EXPECT_MSG(a->ops->alloc_usermode      != NULL, "%s: ops.alloc_usermode is NULL", a->name);
+    EXPECT_MSG(a->ops->userd_set_gpput     != NULL, "%s: ops.userd_set_gpput is NULL", a->name);
+    EXPECT_MSG(a->ops->userd_get_gpput     != NULL, "%s: ops.userd_get_gpput is NULL", a->name);
+    EXPECT_MSG(a->ops->userd_try_get_gpget != NULL, "%s: ops.userd_try_get_gpget is NULL", a->name);
+    EXPECT_MSG(a->ops->engine_for_role     != NULL, "%s: ops.engine_for_role is NULL", a->name);
+  }
+
+  /* A backend claiming its USERD publishes GPGet must actually return one,
+   * or drain_channel silently takes the weaker semaphore path forever. */
+  if (a->ops != NULL && a->ops->userd_try_get_gpget != NULL) {
+    uint32_t probe_userd[64] = {0};
+    uint32_t got = 0xffffffffu;
+    bool     ok  = a->ops->userd_try_get_gpget(probe_userd, &got);
+    EXPECT_MSG(ok == a->cap.userd_exposes_gpget,
+               "%s: cap.userd_exposes_gpget says %d but the accessor returns %d",
+               a->name, (int)a->cap.userd_exposes_gpget, (int)ok);
+    /* NULL arguments must be rejected rather than dereferenced. */
+    EXPECT_MSG(a->ops->userd_try_get_gpget(NULL, &got) == false,
+               "%s: userd_try_get_gpget accepted a NULL USERD", a->name);
+    EXPECT_MSG(a->ops->userd_try_get_gpget(probe_userd, NULL) == false,
+               "%s: userd_try_get_gpget accepted a NULL out-pointer", a->name);
+  }
 
   /* A BAR1-mapped usermode window can only be requested where the class
    * actually takes parameters -- bBar1Mapping lives in that struct.  A

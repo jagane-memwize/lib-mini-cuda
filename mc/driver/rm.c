@@ -1145,27 +1145,6 @@ void rm_perf_boost(int ctl_fd, NvHandle client, NvHandle subdevice)
 }
 
 /*
- * Allocate HOPPER_USERMODE_A (class 0xC661) — a 64 KiB register window
- * that exposes the VF doorbell to userspace.  Two variants exist:
- *   - bar1 == false: BAR0 mapping (pa=0x1fe...).  Allocated for
- *     structural parity with libcuda (which allocates both) but never
- *     written to after setup.
- *   - bar1 == true:  BAR1 mapping (pa=0x1fc...).  The actual doorbell.
- *     libcuda writes 194/194 doorbells here; we do the same.
- * Both have identical VF_DOORBELL offset (+0x90 within the window).
- */
-NvHandle rm_alloc_usermode(int ctl_fd, const mc_arch_desc_t *arch,
-                                  NvHandle root, NvHandle subdevice,
-                                  bool bar1)
-{
-  NV_HOPPER_USERMODE_A_PARAMS um_params = {
-    .bBar1Mapping = bar1,
-    .bPriv        = NV_FALSE,
-  };
-  return rm_alloc(ctl_fd, root, subdevice, arch->cls.usermode, &um_params);
-}
-
-/*
  * Allocate a KEPLER_CHANNEL_GROUP_A (TSG, class 0xA06C).  Every channel
  * on Volta+ must be a TSG member; the TSG carries the engine type and
  * VA space that the channel inherits.  engine_type MUST match the CE

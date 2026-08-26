@@ -301,6 +301,13 @@ than a single umbrella:
   and every class id and arch-varying constant is read through it rather
   than named at the call site.  Invariant-checked by
   `tests/unit/mc_arch_desc_test.c`.
+- `arch/<name>/ops.c` — the behaviour hooks a descriptor cannot express as
+  data: `alloc_usermode` (the parameter struct's *shape* differs — Hopper and
+  Blackwell take one, Volta through Ampere are `RS_NONE`), the USERD
+  accessors (Blackwell's channel class publishes no `GPGet`), and
+  `engine_for_role` (which engine a role runs on is policy, not a constant).
+  Four hooks, each justified by a specific divergence in the pinned headers.
+  This is also the only place in the library that names a USERD struct.
 - `hal/registry.c` + `hal/detect.c` — backend selection.  The registry is the
   explicit table of compiled-in backends plus pure lookups over it; detection
   asks `NV2080_CTRL_CMD_MC_GET_ARCH_INFO` what the chip is, then verifies

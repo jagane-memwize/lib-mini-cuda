@@ -158,8 +158,9 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
 
   /* HOPPER_USERMODE_A BAR0 + BAR1.  Both must be alive before the
    * carrier VAS so we can install the BAR1 doorbell PTE. */
-  ctx->h_usermode_bar0 = rm_alloc_usermode(ctx->ctl_fd, ctx->arch, ctx->h_client,
-                                           ctx->h_subdevice, false);
+  ctx->h_usermode_bar0 = ctx->arch->ops->alloc_usermode(ctx->ctl_fd, ctx->arch,
+                                                 ctx->h_client,
+                                                 ctx->h_subdevice, false);
   if (!ctx->h_usermode_bar0) goto fail;
   ctx->usermode_bar0_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
                                          ctx->h_client, ctx->h_subdevice,
@@ -167,8 +168,9 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
                                          MC_USERMODE_SIZE, 0);
   if (ctx->usermode_bar0_cpu == NULL) goto fail;
 
-  ctx->h_usermode_bar1 = rm_alloc_usermode(ctx->ctl_fd, ctx->arch, ctx->h_client,
-                                           ctx->h_subdevice, true);
+  ctx->h_usermode_bar1 = ctx->arch->ops->alloc_usermode(ctx->ctl_fd, ctx->arch,
+                                                 ctx->h_client,
+                                                 ctx->h_subdevice, true);
   if (!ctx->h_usermode_bar1) goto fail;
   ctx->usermode_bar1_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
                                          ctx->h_client, ctx->h_subdevice,

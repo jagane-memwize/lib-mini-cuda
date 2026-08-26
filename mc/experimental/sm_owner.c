@@ -215,11 +215,13 @@ static void dump_dma_timeout_diag(const mc_channel_t *dma_ch)
   uint32_t e0_expected;
   uint32_t e1_expected;
 
-  got_gpput = dma_ch->userd_cpu ? mc_userd_get_gpput(dma_ch->userd_cpu)
-                                : 0xDEADBEEFu;
+  got_gpput = dma_ch->userd_cpu
+              ? dma_ch->arch->ops->userd_get_gpput(dma_ch->userd_cpu)
+              : 0xDEADBEEFu;
   got_gpget = 0xDEADBEEFu;
   if (dma_ch->userd_cpu)
-    (void)mc_userd_try_get_gpget(dma_ch->userd_cpu, &got_gpget);
+    (void)dma_ch->arch->ops->userd_try_get_gpget(dma_ch->userd_cpu,
+                                                 &got_gpget);
   slot      = dma_ch->gp_put & (MC_GPFIFO_ENTRIES - 1);
   e0        = dma_ch->gpfifo_ring ? dma_ch->gpfifo_ring[slot * 2 + 0] : 0;
   e1        = dma_ch->gpfifo_ring ? dma_ch->gpfifo_ring[slot * 2 + 1] : 0;

@@ -107,9 +107,6 @@ void     rm_perf_boost(int ctl_fd, NvHandle client, NvHandle subdevice);
 NvHandle rm_alloc_root(int ctl_fd);
 NvHandle rm_alloc_device(int ctl_fd, NvHandle root);
 NvHandle rm_alloc_subdevice(int ctl_fd, NvHandle root, NvHandle device);
-NvHandle rm_alloc_usermode(int ctl_fd, const mc_arch_desc_t *arch,
-                           NvHandle root, NvHandle subdevice,
-                           bool bar1_mapping);
 NvHandle rm_alloc_tsg(int ctl_fd, const mc_arch_desc_t *arch,
                       NvHandle root, NvHandle device,
                       NvU32 engine_type, NvHandle vaspace);

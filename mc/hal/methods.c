@@ -22,11 +22,11 @@
 
 #include "nvtypes.h"
 #include "nvmisc.h"
-#include "class/clc8b5.h"        /* HOPPER_DMA_COPY_A + copy methods */
+#include "class/clc8b5.h"        /* NVC8B5_* copy methods (class id
+                                  * itself comes from the descriptor) */
 #include "class/clc86f.h"        /* NVC86F_SET_OBJECT + GP entry */
 #include "class/clc36f.h"        /* NVC36F_DMA_INCR_* method headers */
 #include "class/clc7c0.h"        /* compute method dialect (0xC7C0) */
-#include "class/clcbc0.h"        /* HOPPER_COMPUTE_A class id */
 #include "class/cla0c0.h"        /* INVALIDATE_*_CACHE_NO_WFI */
 #include "class/clb1c0.h"        /* INVALIDATE_SKED_CACHES */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COPY_ENGINE / _COMPUTE */

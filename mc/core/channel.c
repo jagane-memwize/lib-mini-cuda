@@ -29,7 +29,6 @@
 
 #include "nvtypes.h"
 #include "class/cla06fsubch.h"          /* NVA06F_SUBCHANNEL_COPY_ENGINE / _COMPUTE */
-#include "class/cl2080_notification.h"  /* NV2080_ENGINE_TYPE_GR0 (needs nvtypes.h above) */
 #include "ctrl/ctrlc36f.h"              /* NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN */
 #include "arch/hopper/qmd_v04.h"        /* mc_doorbell_kernel_sass — staged once
                                          * at compute-channel init */
@@ -64,9 +63,7 @@
  * mc_channel_alloc_via_carrier — allocate the gpfifo/pb/sema buffers,
  * DMA-map them into the carrier VAS, allocate TSG + channel +
  * engine-class object, fetch the work-submit-token, schedule.  The
- * engine-class branch (CE vs HOPPER_COMPUTE_A) is determined by
- * ch->engine_type: NV2080_ENGINE_TYPE_GR0 -> compute, anything else
- * -> CE.
+ * engine-class branch (CE vs compute) is determined by ch->type.
  *
  * Caller must have already populated ch->type, ch->vas_id,
  * ch->subchannel, and ch->engine_type.
@@ -196,11 +193,17 @@ static int mc_channel_alloc_via_carrier(mc_ctx_t *ctx, mc_channel_t *ch)
       MC_USERD_OFFSET);
   if (!ch->h_channel) return -1;
 
-  if (ch->engine_type == NV2080_ENGINE_TYPE_GR0)
-    ch->h_engine = rm_alloc_compute(ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_channel);
+  /* Dispatch on the channel's kind rather than inferring it from its engine
+   * type.  The old test was `engine_type == NV2080_ENGINE_TYPE_GR0`, which
+   * only worked because compute happened to be the only role on GR0 -- an
+   * architecture that runs compute on a different runlist, or a CE role that
+   * lands on GR0, would silently allocate the wrong engine class. */
+  if (ch->type == MC_CH_TYPE_COMPUTE)
+    ch->h_engine = rm_alloc_compute(ctx->ctl_fd, ctx->arch, ctx->h_client,
+                                    ch->h_channel);
   else
-    ch->h_engine = rm_alloc_ce(ctx->ctl_fd, ctx->arch, ctx->h_client, ch->h_channel,
-                               ch->engine_type);
+    ch->h_engine = rm_alloc_ce(ctx->ctl_fd, ctx->arch, ctx->h_client,
+                               ch->h_channel, ch->engine_type);
   if (!ch->h_engine) return -1;
 
   /* Work-submit-token + schedule. */
@@ -233,7 +236,7 @@ static void mc_channel_free_core(mc_ctx_t *ctx, mc_channel_t *ch)
 {
   /* Drain (best-effort). */
   if (ch->userd_cpu != NULL)
-    drain_channel(ch->userd_cpu, MC_TIMEOUT_MS);
+    drain_channel(ch, MC_TIMEOUT_MS);
 
   /* Disable the channel before unmapping anything it might still
    * dereference. */
@@ -374,8 +377,8 @@ void mc_dma_channel_fini(mc_ctx_t *ctx, mc_vas_t slot,
  * reach the BAR1 doorbell PTE at ctx->vas[CARRIER].dbell_gpu_va.
  *
  * Differences from mc_dma_channel_init:
- *   - engineType = NV2080_ENGINE_TYPE_GR0 (compute, runlist 0 on Hopper)
- *     rather than an LCE.
+ *   - engineType comes from the architecture's engine policy for
+ *     MC_ROLE_COMPUTE (GR0 on Hopper) rather than an LCE.
  *   - Engine class = HOPPER_COMPUTE_A (0xCBC0) rather than HOPPER_DMA_COPY_A.
  *   - Loads a single compute module (QMD/CB0/SASS) into the carrier VAS.
  */
@@ -494,7 +497,8 @@ int mc_compute_channel_init(mc_ctx_t *ctx, mc_vas_t slot)
   ch->type        = MC_CH_TYPE_COMPUTE;
   ch->vas_id      = slot;
   ch->subchannel  = NVA06F_SUBCHANNEL_COMPUTE;
-  ch->engine_type = NV2080_ENGINE_TYPE_GR0;
+  ch->engine_type = ctx->arch->ops->engine_for_role(ctx->arch, MC_ROLE_COMPUTE,
+                                                    0);
 
   if (mc_channel_alloc_via_carrier(ctx, ch) != 0) return -1;
 
@@ -711,7 +715,7 @@ void mc_uvm_channel_fini(mc_ctx_t *ctx)
   /* Drain + disable first, while UVM mappings + RM handles are still
    * intact.  No other GPU work can wake this channel afterwards. */
   if (ch->userd_cpu != NULL)
-    drain_channel(ch->userd_cpu, MC_TIMEOUT_MS);
+    drain_channel(ch, MC_TIMEOUT_MS);
 
   if (ch->h_channel && ctx->ctl_fd >= 0)
     rm_channel_disable(ctx->ctl_fd, ctx->h_client, ch->h_channel);

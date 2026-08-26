@@ -104,8 +104,62 @@ struct mc_arch_caps {
     bool userd_exposes_gpget;
 };
 
-/* The descriptor proper. */
+/* Forward declaration: the ops table references the descriptor. */
+typedef struct mc_arch_desc mc_arch_desc_t;
+
+/* Channel roles, mirrored from internal/types.h.
+ *
+ * hal/ must not include internal/types.h -- types.h includes THIS header for
+ * the descriptor, so the dependency has to run one way.  The role enum is
+ * duplicated as an opaque integer in the ops signature rather than pulling
+ * the whole data model in. */
+typedef int mc_arch_role_t;
+
+/* ── Behaviour that is not expressible as data ────────────────────────────
+ *
+ * Four hooks, each justified by a specific divergence in the pinned headers
+ * rather than by speculation:
+ *
+ *   alloc_usermode      HOPPER/BLACKWELL_USERMODE_A take an optional
+ *                       NV_HOPPER_USERMODE_A_PARAMS; VOLTA/TURING/AMPERE are
+ *                       RS_NONE and must be allocated with NULL.  The
+ *                       parameter struct's *shape* differs, so no amount of
+ *                       data substitution covers it.
+ *
+ *   userd_*             USERD's layout belongs to the channel class.  Ampere
+ *                       and Hopper agree (GPGet 0x88, GPPut 0x8c), but
+ *                       BLACKWELL_CHANNEL_GPFIFO_A's Nvc96fControl publishes
+ *                       GPPut and NO GPGet at all, so the getter is a try_
+ *                       form and callers need a fallback.
+ *
+ *   engine_for_role     Which engine a role runs on is a policy decision, not
+ *                       a constant: today every CE role shares one non-GRCE
+ *                       LCE and compute uses GR0, but a part with a different
+ *                       copy-engine population may want to spread roles
+ *                       across LCEs.
+ *
+ * Everything else about an architecture is data -- see mc_arch_desc_t above.
+ */
 typedef struct {
+    /* Allocate the USERMODE aperture object.  `bar1` requests the BAR1
+     * mapping and is only meaningful where cap.usermode_bar1_capable. */
+    NvHandle (*alloc_usermode)(int ctl_fd, const mc_arch_desc_t *arch,
+                               NvHandle root, NvHandle subdevice, bool bar1);
+
+    void     (*userd_set_gpput)(void *userd, uint32_t value);
+    uint32_t (*userd_get_gpput)(const void *userd);
+    /* False when the class publishes no GPGet.  A caller that treats a false
+     * return as "zero" has no correct behaviour on Blackwell. */
+    bool     (*userd_try_get_gpget)(const void *userd, uint32_t *out_gpget);
+
+    /* Engine type for a channel role.  `selected_lce` is the engine type
+     * chosen by copy-engine selection, offered so a policy can use it. */
+    NvU32 (*engine_for_role)(const mc_arch_desc_t *arch,
+                             mc_arch_role_t role, NvU32 selected_lce);
+} mc_arch_ops_t;
+
+/* The descriptor proper. */
+struct mc_arch_desc {
     const char      *name;          /* "hopper" — appears in log lines      */
     mc_arch_family_t family;
 
@@ -128,7 +182,9 @@ typedef struct {
     struct mc_arch_classes cls;
     struct mc_arch_layout  lay;
     struct mc_arch_caps    cap;
-} mc_arch_desc_t;
+
+    const mc_arch_ops_t   *ops;
+};
 
 /* Backends define one of these.  Ops tables join it in a later step. */
 extern const mc_arch_desc_t mc_arch_hopper;

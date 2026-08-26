@@ -100,7 +100,8 @@ MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
 MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c mc/hal/registry.c \
                 mc/hal/detect.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
-MC_ARCH_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/qmd_v04.c
+MC_ARCH_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/ops.c \
+                mc/arch/hopper/qmd_v04.c
 MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c \
                 mc/experimental/doorbell.c
 
@@ -140,13 +141,23 @@ UNIT_WRAP_mc_lce_selection_test := ioctl
 UNIT_SRCS_mc_lce_selection_test := mc/driver/rm.c
 UNIT_WRAP_mc_init_version_test  := open ioctl close
 # Pure encoding test: links only the emitters, interposes nothing.
-UNIT_SRCS_mc_methods_test       := mc/hal/methods.c mc/arch/hopper/backend.c
-UNIT_SRCS_mc_arch_desc_test     := mc/arch/hopper/backend.c
+# Pure encoding / pure data: link the backend (and what it pulls in) but
+# interpose nothing -- neither test issues an ioctl.
+UNIT_WRAP_mc_methods_test       := none
+UNIT_SRCS_mc_methods_test       := mc/hal/methods.c mc/arch/hopper/backend.c \
+                                   mc/arch/hopper/ops.c mc/driver/rm.c
+UNIT_WRAP_mc_arch_desc_test     := none
+UNIT_SRCS_mc_arch_desc_test     := mc/arch/hopper/backend.c \
+                                   mc/arch/hopper/ops.c mc/driver/rm.c
 UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
-                                   mc/arch/hopper/backend.c mc/driver/rm.c
+                                   mc/arch/hopper/backend.c \
+                                   mc/arch/hopper/ops.c mc/driver/rm.c
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
-unit_wrap = $(if $(UNIT_WRAP_$(1)),$(UNIT_WRAP_$(1)),$(UNIT_WRAP_DEFAULT))
+# `none` means "interpose nothing": a test that links driver code but never
+# calls into it still needs --wrap suppressed, or the linker demands a
+# __wrap_ioctl the test has no reason to define.
+unit_wrap = $(if $(UNIT_WRAP_$(1)),$(filter-out none,$(UNIT_WRAP_$(1))),$(UNIT_WRAP_DEFAULT))
 unit_srcs = $(if $(UNIT_SRCS_$(1)),$(UNIT_SRCS_$(1)),$(UNIT_SRCS_DEFAULT))
 
 BINS := $(MC_BINS)
@@ -360,6 +371,8 @@ sm_owner: mc/arch/hopper/sm_owner_sass.h
 #   core/vaspace.c           VA pool (Paper-F1 anchor) + mc_va_space_* helpers.
 #   arch/hopper/backend.c    the Hopper architecture descriptor: class ids,
 #                            layout offsets, capability bits.  Pure data.
+#   arch/hopper/ops.c        Hopper behaviour hooks: usermode allocation,
+#                            USERD accessors, engine policy.
 #   arch/hopper/qmd_v04.c    Hopper QMD V04 builder + embedded SASS.
 #   experimental/compute.c   HOPPER_COMPUTE_A demos (mc_compute_doorbell_kernel,
 #                            mc_memcpy_gpu_doorbell_sm, mc_compute_get_scratch).

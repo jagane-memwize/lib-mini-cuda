@@ -27,6 +27,8 @@
 #include "ctrl/ctrl2080/ctrl2080mc.h"  /* ARCHITECTURE_GH100 */
 
 #include "hal/arch.h"
+
+extern const mc_arch_ops_t mc_arch_hopper_ops;
 #include "internal/types.h"
 
 const mc_arch_desc_t mc_arch_hopper = {
@@ -62,6 +64,8 @@ const mc_arch_desc_t mc_arch_hopper = {
         .vidmem_align_bytes   = MC_VIDMEM_ALIGN_BYTES,
         .gpfifo_entries       = MC_GPFIFO_ENTRIES,
     },
+
+    .ops = &mc_arch_hopper_ops,
 
     .cap = {
         /* HOPPER_USERMODE_A is RS_OPTIONAL(NV_HOPPER_USERMODE_A_PARAMS) and

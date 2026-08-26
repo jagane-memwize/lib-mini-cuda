@@ -19,50 +19,13 @@
 #include <time.h>
 
 #include "nvtypes.h"
-#include "nvmisc.h"
-#include "class/clc8b5.h"        /* HOPPER_DMA_COPY_A + methods */
-#include "class/clc86f.h"        /* HOPPER_CHANNEL_GPFIFO_A + GP entry */
-#include "class/clc36f.h"        /* NVC36F_DMA_INCR_* method headers */
-#include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COPY_ENGINE */
 
+#include "hal/arch.h"
 #include "internal/types.h"
 #include "internal/log.h"
 #include "hal/methods.h"
 #include "internal/submit.h"
 
-/* ── USERD access ─────────────────────────────────────────────────────────
- *
- * USERD's layout belongs to the channel class, not to the library, so this
- * file is the only place that names the class struct.  mc_channel_t carries
- * an untyped `void *userd_cpu` and internal/types.h needs no class header.
- *
- * Layout across the generations that matter here:
- *   AMPERE_CHANNEL_GPFIFO_A    Nvc56fControl   GPGet @0x88, GPPut @0x8c
- *   HOPPER_CHANNEL_GPFIFO_A    Nvc86fControl   GPGet @0x88, GPPut @0x8c
- *   BLACKWELL_CHANNEL_GPFIFO_A Nvc96fControl   GPPut @0x8c, NO GPGet
- *
- * Blackwell dropping GPGet is why the getter is a try_ form: a caller that
- * assumes a readable GPGet has no correct behaviour on that class.
- */
-#define USERD(p) ((volatile HopperAControlGPFifo *)(p))
-
-void mc_userd_set_gpput(void *userd, uint32_t value)
-{
-  USERD(userd)->GPPut = value;
-}
-
-uint32_t mc_userd_get_gpput(const void *userd)
-{
-  return USERD(userd)->GPPut;
-}
-
-bool mc_userd_try_get_gpget(const void *userd, uint32_t *out_gpget)
-{
-  if (userd == NULL || out_gpget == NULL)
-    return false;
-  *out_gpget = USERD(userd)->GPGet;
-  return true;
-}
 
 
 /*
@@ -89,11 +52,11 @@ bool mc_userd_try_get_gpget(const void *userd, uint32_t *out_gpget)
  * On x86 both are Write-Combine stores; the sfences flush WC buffers so
  * the GPU observes the writes in causal order.
  */
-void ring_doorbell(void *userd,
+void ring_doorbell(const mc_arch_desc_t *arch, void *userd,
                           uint32_t new_gp_put, volatile uint32_t *vf_doorbell,
                           uint32_t work_submit_token)
 {
-  USERD(userd)->GPPut = new_gp_put;
+  arch->ops->userd_set_gpput(userd, new_gp_put);
   _mm_sfence();
   *vf_doorbell = work_submit_token;
   _mm_sfence();
@@ -157,7 +120,7 @@ mc_status_t mc_channel_arm(mc_channel_t *ch,
    * wake event.  ring_doorbell() inside mc_channel_submit() does
    * the same store + sfence + the BAR1 doorbell write; mc_channel_arm
    * stops here and lets a different agent ring. */
-  mc_userd_set_gpput(ch->userd_cpu, ch->gp_put);
+  ch->arch->ops->userd_set_gpput(ch->userd_cpu, ch->gp_put);
   _mm_sfence();
 
   return MC_OK;
@@ -188,16 +151,18 @@ mc_status_t mc_channel_submit(mc_channel_t *ch,
 
   /* ring_doorbell does USERD GPPut + sfence + BAR1 doorbell + sfence
    * internally — the two writes that submit work on Hopper. */
-  ring_doorbell(ch->userd_cpu, ch->gp_put, vf_doorbell, ch->work_submit_token);
+  ring_doorbell(ch->arch, ch->userd_cpu, ch->gp_put, vf_doorbell,
+                ch->work_submit_token);
 
   rc = mc_channel_poll_sema(ch->sema_ptr, ch->sema_payload, t0);
   if (rc != MC_OK)
   {
-    uint32_t userd_gp_put = ch->userd_cpu ? mc_userd_get_gpput(ch->userd_cpu)
-                                          : 0xffffffffu;
+    uint32_t userd_gp_put = ch->userd_cpu
+                              ? ch->arch->ops->userd_get_gpput(ch->userd_cpu)
+                              : 0xffffffffu;
     uint32_t userd_gp_get = 0xffffffffu;
     if (ch->userd_cpu)
-      (void)mc_userd_try_get_gpget(ch->userd_cpu, &userd_gp_get);
+      (void)ch->arch->ops->userd_try_get_gpget(ch->userd_cpu, &userd_gp_get);
     uint32_t sema_actual  = ch->sema_ptr ? *ch->sema_ptr : 0xffffffffu;
     WARN_LOG("mc_channel_submit: poll failed rc=%d role=%d type=%d vas=%d "
              "h_channel=0x%x gp_put_mirror=0x%x USERD{GPPut=0x%x GPGet=0x%x} "
@@ -216,31 +181,48 @@ mc_status_t mc_channel_submit(mc_channel_t *ch,
 }
 
 /*
- * drain_channel — poll USERD until GPPut == GPGet (all submitted work
- * consumed) or timeout_ms elapses.  Called from mc_fini so the channel
- * is idle before resources are freed.  Teardown-tolerant: WARN and
- * return on timeout; the subsequent rm_channel_disable / channel free
- * will force-preempt anything still in flight.
+ * drain_channel — wait until the channel has consumed everything submitted,
+ * or timeout_ms elapses.  Called from mc_fini so the channel is idle before
+ * its resources are freed.  Teardown-tolerant: WARN and return on timeout;
+ * the subsequent rm_channel_disable / channel free force-preempts anything
+ * still in flight.
  *
- * In practice the last mc_memcpy already polled the semaphore to
- * completion, so GPPut should already equal GPGet at entry — this is
- * insurance, not a hot path.
+ * In practice the last mc_memcpy already polled its semaphore to completion,
+ * so the channel is normally already idle at entry -- this is insurance, not
+ * a hot path.
+ *
+ * Two ways to observe idleness, because not every channel class offers the
+ * first.  Where USERD publishes GPGet, comparing it against GPPut is exact:
+ * it reports what PBDMA has actually fetched.  BLACKWELL_CHANNEL_GPFIFO_A
+ * publishes no GPGet at all (Nvc96fControl is GPPut-only), so there the
+ * release semaphore is the only progress signal available -- weaker, since it
+ * reports the last *completed* submission rather than the fetch pointer, but
+ * sufficient for "has the work we know about finished".
  */
-void drain_channel(void *userd, long timeout_ms)
+void drain_channel(mc_channel_t *ch, long timeout_ms)
 {
   struct timespec t0, now;
   long            elapsed_ms = 0;
   uint32_t        gpget;
 
-  /* A channel class that does not publish GPGet gives us nothing to poll.
-   * Draining is insurance rather than a hot path -- the last mc_memcpy
-   * already polled its semaphore to completion -- so skip rather than
-   * inventing a value. */
-  if (!mc_userd_try_get_gpget(userd, &gpget))
+  if (ch == NULL || ch->userd_cpu == NULL || ch->arch == NULL) return;
+
+  if (!ch->arch->ops->userd_try_get_gpget(ch->userd_cpu, &gpget))
+  {
+    /* No GPGet on this class.  Fall back to the release semaphore, which the
+     * last submission programmed with ch->sema_payload. */
+    if (ch->sema_ptr == NULL || ch->sema_payload == 0) return;
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    if (mc_channel_poll_sema(ch->sema_ptr, ch->sema_payload, t0) != MC_OK)
+      WARN_LOG("drain_channel: semaphore fallback timed out after %ld ms "
+               "(expected 0x%x, saw 0x%x)",
+               timeout_ms, ch->sema_payload, *ch->sema_ptr);
     return;
+  }
 
   clock_gettime(CLOCK_MONOTONIC, &t0);
-  while (USERD(userd)->GPPut != USERD(userd)->GPGet)
+  while (ch->arch->ops->userd_get_gpput(ch->userd_cpu) != gpget)
   {
     volatile int s;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -249,11 +231,12 @@ void drain_channel(void *userd, long timeout_ms)
     if (elapsed_ms > timeout_ms)
     {
       WARN_LOG("drain_channel: timeout after %ld ms (GPPut=0x%x GPGet=0x%x)",
-               elapsed_ms, USERD(userd)->GPPut, USERD(userd)->GPGet);
+               elapsed_ms, ch->arch->ops->userd_get_gpput(ch->userd_cpu),
+               gpget);
       return;
     }
-    for (s = 0; s < MC_POLL_SPIN_ITERATIONS
-                && USERD(userd)->GPPut != USERD(userd)->GPGet; s++)
+    for (s = 0; s < MC_POLL_SPIN_ITERATIONS; s++)
       ;
+    (void)ch->arch->ops->userd_try_get_gpget(ch->userd_cpu, &gpget);
   }
 }
