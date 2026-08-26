@@ -962,6 +962,35 @@ NvU32 pick_non_grce_lce(int ctl_fd, NvHandle h_client,
               (unsigned long long)caps.present);
     return (NvU32)-1;
   }
+
+  /* Record which engine was chosen and out of what.  The selection depends on
+   * the board's copy-engine population, which differs between parts of the
+   * same architecture -- an SXM module and a PCIe card do not expose the same
+   * LCEs or the same GRCE assignment -- so "which LCE did this host pick" is
+   * the first thing worth knowing when a transfer misbehaves on new hardware.
+   * Until now this function was silent unless it failed outright. */
+  if (mc_debug())
+  {
+    char     grce_list[128];
+    int      n = 0;
+    NvU32    i;
+    for (i = 0; i < NV2080_CTRL_MAX_CES && n < (int)sizeof(grce_list) - 8; i++)
+    {
+      if (!((caps.present >> i) & 1))
+        continue;
+      n += snprintf(grce_list + n, sizeof(grce_list) - (size_t)n, "%u%s%s ", i,
+                    NV2080_CTRL_CE_GET_CAP(caps.capsTbl[i],
+                                           NV2080_CTRL_CE_CAPS_CE_GRCE)
+                      ? ":grce" : "",
+                    NV2080_CTRL_CE_GET_CAP(caps.capsTbl[i],
+                                           NV2080_CTRL_CE_CAPS_CE_SYSMEM)
+                      ? ":sysmem" : "");
+    }
+    DEBUG_LOG("copy-engine selection: LCE%u (engine_type=0x%x) from present="
+              "0x%llx [ %s]", selected_lce,
+              (unsigned)NV2080_ENGINE_TYPE_COPY(selected_lce),
+              (unsigned long long)caps.present, grce_list);
+  }
   return NV2080_ENGINE_TYPE_COPY(selected_lce);
 }
 
