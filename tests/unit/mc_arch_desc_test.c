@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "hal/arch.h"
+#include "hal/registry.h"
 
 static int failures;
 
@@ -33,10 +34,12 @@ static int failures;
     }                                                                   \
   } while (0)
 
-static const mc_arch_desc_t *const all_backends[] = {
-  &mc_arch_hopper,
-};
-#define N_BACKENDS (sizeof(all_backends) / sizeof(all_backends[0]))
+/* Iterate the real registry rather than a list maintained here.  A backend
+ * added to MC_ARCHS inherits every invariant below automatically -- a second
+ * list would be one more thing to forget to update, and the failure would be
+ * a new backend silently going unchecked. */
+static const mc_arch_desc_t *const *all_backends;
+static size_t                       N_BACKENDS;
 
 static void check_one(const mc_arch_desc_t *a)
 {
@@ -186,6 +189,8 @@ static void check_distinct(void)
 int main(void)
 {
   size_t i;
+  all_backends = mc_arch_registry(&N_BACKENDS);
+  EXPECT_MSG(N_BACKENDS > 0, "registry is empty");
   for (i = 0; i < N_BACKENDS; i++)
     check_one(all_backends[i]);
   check_distinct();

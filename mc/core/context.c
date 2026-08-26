@@ -175,11 +175,24 @@ mc_status_t mc_init_ex(mc_ctx_t **out_ctx, const mc_init_params_t *params)
                                       ctx->h_subdevice);
   if (lce_engine_type == (NvU32)-1) goto fail;
 
-  /* HOPPER_USERMODE_A BAR0 + BAR1.  Both must be alive before the
-   * carrier VAS so we can install the BAR1 doorbell PTE. */
+  /* The USERMODE aperture: a register window exposing the VF doorbell.
+   *
+   * Hopper and Blackwell can map it through either BAR0 or BAR1, and libmc
+   * allocates both -- BAR0 for structural parity with libcuda, BAR1 because
+   * that is the one a GPU-side agent can be given a PTE for.  Ampere and Ada
+   * have no BAR1 form at all: AMPERE_USERMODE_A takes no allocation
+   * parameters, so there is nothing to ask BAR1 for.
+   *
+   * The doorbell itself sits at the same offset inside whichever window
+   * exists -- the window base and the register pick up the same
+   * virtualRegPhysOffset -- so the host's submission path is identical
+   * either way.  What the BAR1 window buys is the ability to install a
+   * doorbell PTE, which is why its absence costs the GPU-issued doorbell
+   * paths and not ordinary copies. */
   ctx->h_usermode_bar0 = ctx->arch->ops->alloc_usermode(ctx->ctl_fd, ctx->arch,
-                                                 ctx->h_client,
-                                                 ctx->h_subdevice, false);
+                                                        ctx->h_client,
+                                                        ctx->h_subdevice,
+                                                        false);
   if (!ctx->h_usermode_bar0) goto fail;
   ctx->usermode_bar0_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
                                          ctx->h_client, ctx->h_subdevice,
@@ -187,17 +200,26 @@ mc_status_t mc_init_ex(mc_ctx_t **out_ctx, const mc_init_params_t *params)
                                          MC_USERMODE_SIZE, 0);
   if (ctx->usermode_bar0_cpu == NULL) goto fail;
 
-  ctx->h_usermode_bar1 = ctx->arch->ops->alloc_usermode(ctx->ctl_fd, ctx->arch,
-                                                 ctx->h_client,
-                                                 ctx->h_subdevice, true);
-  if (!ctx->h_usermode_bar1) goto fail;
-  ctx->usermode_bar1_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
-                                         ctx->h_client, ctx->h_subdevice,
-                                         ctx->h_usermode_bar1, 0,
-                                         MC_USERMODE_SIZE, 0);
-  if (ctx->usermode_bar1_cpu == NULL) goto fail;
-  ctx->vf_doorbell = (volatile uint32_t *)(ctx->usermode_bar1_cpu
-                                           + MC_VF_DOORBELL_OFFSET);
+  if (ctx->arch->cap.usermode_bar1_capable)
+  {
+    ctx->h_usermode_bar1 = ctx->arch->ops->alloc_usermode(ctx->ctl_fd,
+                                                          ctx->arch,
+                                                          ctx->h_client,
+                                                          ctx->h_subdevice,
+                                                          true);
+    if (!ctx->h_usermode_bar1) goto fail;
+    ctx->usermode_bar1_cpu = rm_map_memory(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
+                                           ctx->h_client, ctx->h_subdevice,
+                                           ctx->h_usermode_bar1, 0,
+                                           MC_USERMODE_SIZE, 0);
+    if (ctx->usermode_bar1_cpu == NULL) goto fail;
+  }
+
+  /* Ring through whichever window this architecture actually has. */
+  ctx->vf_doorbell = (volatile uint32_t *)
+      ((ctx->arch->cap.usermode_bar1_capable ? ctx->usermode_bar1_cpu
+                                             : ctx->usermode_bar0_cpu)
+       + ctx->arch->lay.vf_doorbell_offset);
 
   /* Sysmem carrier VAS (DMA + compute channels).  Brought up before the
    * channels themselves so neither has to embed VAS handles in its extras. */

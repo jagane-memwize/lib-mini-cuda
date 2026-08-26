@@ -93,7 +93,7 @@ MC_ENABLE_EXPERIMENTAL ?= 1
 
 # Architectures with a backend in this build.  Trimming it (MC_ARCHS=hopper)
 # gives a leaner library and skips the cubin builds for the others.
-MC_ARCHS ?= hopper
+MC_ARCHS ?= hopper ampere
 
 # SM version each architecture's kernels are compiled for.  SASS is not
 # portable across these, which is why every architecture needs its own cubin
@@ -169,17 +169,19 @@ UNIT_WRAP_mc_init_version_test  := open ioctl close
 # Linking the Hopper descriptor pulls in the tables it points at, and those
 # reach rm_alloc.  One variable, so adding a field to the descriptor does not
 # mean editing every test that touches it.
-HOPPER_BACKEND_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/ops.c \
-                       mc/arch/hopper/qmd_v04.c mc/driver/rm.c
+# Every backend the build enables, plus what their descriptors reach into.
+# Tests that touch the registry link this rather than naming one architecture,
+# so adding a backend does not mean editing the tests.
+ALL_BACKEND_SRCS := $(MC_ARCH_SRCS) mc/driver/rm.c
 
 UNIT_WRAP_mc_methods_test       := none
-UNIT_SRCS_mc_methods_test       := mc/hal/methods.c $(HOPPER_BACKEND_SRCS)
+UNIT_SRCS_mc_methods_test       := mc/hal/methods.c $(ALL_BACKEND_SRCS)
 UNIT_WRAP_mc_feature_test       := none
 UNIT_SRCS_mc_feature_test       := mc/core/feature.c mc/driver/rm.c
 UNIT_WRAP_mc_arch_desc_test     := none
-UNIT_SRCS_mc_arch_desc_test     := $(HOPPER_BACKEND_SRCS)
+UNIT_SRCS_mc_arch_desc_test     := $(ALL_BACKEND_SRCS) mc/hal/registry.c
 UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
-                                   $(HOPPER_BACKEND_SRCS)
+                                   $(ALL_BACKEND_SRCS)
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
 # `none` means "interpose nothing": a test that links driver code but never

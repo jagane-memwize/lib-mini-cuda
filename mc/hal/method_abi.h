@@ -55,6 +55,7 @@
 #include "class/clcab5.h"
 
 /* Compute classes: Ampere B (the dialect Hopper inherits), Ada, Blackwell. */
+#include "class/clc6c0.h"        /* AMPERE_COMPUTE_A dialect (GA100) */
 #include "class/clc7c0.h"
 #include "class/clcdc0.h"
 
@@ -125,6 +126,20 @@ MC_ASSERT_METHOD_SAME(NVC96F_SET_OBJECT, NVC86F_SET_OBJECT, "C96F SET_OBJECT");
  * that Hopper allocates HOPPER_COMPUTE_A (0xCBC0) but is driven with the
  * 0xC7C0 (AMPERE_COMPUTE_B) dialect -- the class id and the method dialect
  * are independent axes, which is exactly why these asserts matter. */
+/* GA100 allocates AMPERE_COMPUTE_A (0xC6C0), a different class id from the
+ * 0xC7C0 dialect the emitter writes -- so its agreement has to be checked,
+ * not assumed from the two being "both Ampere". */
+MC_ASSERT_METHOD_SAME(NVC6C0_SEND_PCAS_A, NVC7C0_SEND_PCAS_A, "C6C0 SEND_PCAS_A");
+MC_ASSERT_METHOD_SAME(NVC6C0_SEND_SIGNALING_PCAS2_B, NVC7C0_SEND_SIGNALING_PCAS2_B, "C6C0 SEND_SIGNALING_PCAS2_B");
+MC_ASSERT_METHOD_SAME(NVC6C0_SET_REPORT_SEMAPHORE_A, NVC7C0_SET_REPORT_SEMAPHORE_A, "C6C0 SET_REPORT_SEMAPHORE_A");
+MC_ASSERT_METHOD_SAME(NVC6C0_SET_SHADER_SHARED_MEMORY_WINDOW_A, NVC7C0_SET_SHADER_SHARED_MEMORY_WINDOW_A, "C6C0 SHARED_MEMORY_WINDOW_A");
+MC_ASSERT_METHOD_SAME(NVC6C0_SET_SHADER_LOCAL_MEMORY_WINDOW_A, NVC7C0_SET_SHADER_LOCAL_MEMORY_WINDOW_A, "C6C0 LOCAL_MEMORY_WINDOW_A");
+MC_ASSERT_METHOD_SAME(NVC6C0_INVALIDATE_SHADER_CACHES_NO_WFI, NVC7C0_INVALIDATE_SHADER_CACHES_NO_WFI, "C6C0 INVALIDATE_SHADER_CACHES_NO_WFI");
+MC_ASSERT_FIELD_SAME(NVC6C0_SET_REPORT_SEMAPHORE_D_OPERATION,
+                     NVC7C0_SET_REPORT_SEMAPHORE_D_OPERATION, "C6C0 REPORT_SEMAPHORE_D_OPERATION");
+MC_ASSERT_FIELD_SAME(NVC6C0_SET_REPORT_SEMAPHORE_A_OFFSET_UPPER,
+                     NVC7C0_SET_REPORT_SEMAPHORE_A_OFFSET_UPPER, "C6C0 REPORT_SEMAPHORE_A_OFFSET_UPPER");
+
 MC_ASSERT_METHOD_SAME(NVCDC0_SEND_PCAS_A, NVC7C0_SEND_PCAS_A, "CDC0 SEND_PCAS_A");
 MC_ASSERT_METHOD_SAME(NVCDC0_SEND_SIGNALING_PCAS2_B, NVC7C0_SEND_SIGNALING_PCAS2_B, "CDC0 SEND_SIGNALING_PCAS2_B");
 MC_ASSERT_METHOD_SAME(NVCDC0_SET_REPORT_SEMAPHORE_A, NVC7C0_SET_REPORT_SEMAPHORE_A, "CDC0 SET_REPORT_SEMAPHORE_A");
@@ -132,7 +147,18 @@ MC_ASSERT_METHOD_SAME(NVCDC0_SET_SHADER_SHARED_MEMORY_WINDOW_A, NVC7C0_SET_SHADE
 MC_ASSERT_METHOD_SAME(NVCDC0_SET_SHADER_LOCAL_MEMORY_WINDOW_A, NVC7C0_SET_SHADER_LOCAL_MEMORY_WINDOW_A, "CDC0 LOCAL_MEMORY_WINDOW_A");
 MC_ASSERT_METHOD_SAME(NVCDC0_INVALIDATE_SHADER_CACHES_NO_WFI, NVC7C0_INVALIDATE_SHADER_CACHES_NO_WFI, "CDC0 INVALIDATE_SHADER_CACHES_NO_WFI");
 
-/* ── Compute report-semaphore control word ───────────────────────────────*/
+/* ── Compute report-semaphore control word ───────────────────────────────
+ *
+ * NOT asserted same: SET_REPORT_SEMAPHORE_A_OFFSET_UPPER is 7:0 on C6C0 and
+ * C7C0 but 24:0 on CDC0 -- Blackwell widened the field from 8 to 25 bits.
+ *
+ * Writing it with the narrow C7C0 mask stays correct there (the extra bits
+ * are simply zero), so the shared emitter is safe; what it costs is reach.
+ * An 8-bit upper limits a compute report semaphore to a GPU VA below 2^40,
+ * which every address libmc uses today satisfies.  A Blackwell backend that
+ * ever places one higher must widen the mask, and this is the note saying
+ * why it compiles either way.
+ */
 MC_ASSERT_FIELD_SAME(NVCDC0_SET_REPORT_SEMAPHORE_D_OPERATION,
                      NVC7C0_SET_REPORT_SEMAPHORE_D_OPERATION, "CDC0 REPORT_SEMAPHORE_D_OPERATION");
 
