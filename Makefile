@@ -83,8 +83,14 @@ MC_HELPERS  := $(filter %_helpers.c,$(MC_ALL_SRCS))
 MC_SRCS     := $(filter-out %_helpers.c,$(MC_ALL_SRCS))
 MC_BINS     := $(patsubst tests/mc/%.c,bin/%,$(MC_SRCS))
 
-LIBMC := lib/libmc.so
+# The library carries a SONAME, so the file on disk must BE that name: the
+# loader resolves a binary's DT_NEEDED (libmc.so.0) against real files, and a
+# lone lib/libmc.so would leave every demo failing at exec with
+# "cannot open shared object file".  Ship the real object as the SONAME and
+# keep the unversioned name as the development symlink linkers look for.
 LIBMC_SONAME := libmc.so.0
+LIBMC_REAL   := lib/$(LIBMC_SONAME)
+LIBMC        := lib/libmc.so
 LIBMC_MAP    := mc/libmc.map
 # Sources, grouped by layer.  core/ and hal/ are architecture-neutral;
 # driver/ wraps the RM and UVM ioctl surfaces; arch/<name>/ holds
@@ -138,7 +144,7 @@ unit_wrap = $(if $(UNIT_WRAP_$(1)),$(UNIT_WRAP_$(1)),$(UNIT_WRAP_DEFAULT))
 unit_srcs = $(if $(UNIT_SRCS_$(1)),$(UNIT_SRCS_$(1)),$(UNIT_SRCS_DEFAULT))
 
 BINS := $(MC_BINS)
-LIBS := $(LIBMC)
+LIBS := $(LIBMC) $(LIBMC_REAL)
 
 .DEFAULT_GOAL := all
 .PHONY: all bins libs mc-all clean help libmc
@@ -356,9 +362,14 @@ $(BUILD_DIR)/%.o: mc/%.c compat/nvidia.mk | $(BUILD_DIR) check-nvidia-source
 # The version script is the authority on what libmc exports; mc/include/mc/mc.h's MC_API
 # markers must list the same set.  Without it, every non-static symbol in every
 # TU lands in the public ABI.
-$(LIBMC): $(MC_LIB_OBJS) $(LIBMC_MAP) | lib
+$(LIBMC_REAL): $(MC_LIB_OBJS) $(LIBMC_MAP) | lib
 	$(CC) $(CFLAGS) $(MC_LIB_CFLAGS) -shared -o $@ $(MC_LIB_OBJS) \
 	    -Wl,--version-script,$(LIBMC_MAP) -Wl,-soname,$(LIBMC_SONAME)
+
+# Development symlink: `-lmc` resolves through this, while the DT_NEEDED
+# recorded in every binary points at $(LIBMC_SONAME).
+$(LIBMC): $(LIBMC_REAL)
+	ln -sf $(LIBMC_SONAME) $@
 
 # Generic unit-test rule.  Each test links the library sources it needs
 # directly (not the .so) and interposes libc entry points with --wrap, so the
@@ -388,6 +399,25 @@ check-abi: $(LIBMC)
 	  exit 1;                                                                 \
 	fi
 	@echo "  OK      ABI: $$(wc -l < $(BUILD_DIR)/.abi-actual) exported symbols match mc/include/mc/mc.h"
+
+# Guard that every built binary can actually resolve its libraries at exec
+# time.  A build+link success does not imply this: the SONAME recorded in
+# libmc is what binaries record as DT_NEEDED, so shipping the library under a
+# different filename links fine and then fails at exec with "cannot open
+# shared object file".  That is invisible to a build-only check and to
+# check-abi, and on a host without a GPU it never gets exercised.
+.PHONY: check-link
+check-link: $(MC_BINS) $(LIBMC)
+	@fail=0; \
+	for b in $(MC_BINS); do \
+	  missing=$$(ldd -r $$b 2>/dev/null | grep "not found" || true); \
+	  if [ -n "$$missing" ]; then \
+	    echo "ERROR: $$b has unresolved libraries:" >&2; \
+	    echo "$$missing" >&2; fail=1; \
+	  fi; \
+	done; \
+	if [ $$fail -ne 0 ]; then exit 1; fi
+	@echo "  OK      link: $(words $(MC_BINS)) binaries resolve all libraries"
 
 # ── Utility ────────────────────────────────────────────────────────────────
 clean:
