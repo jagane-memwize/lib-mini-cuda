@@ -28,6 +28,8 @@
 #include "class/clc36f.h"        /* NVC36F_DMA_INCR_* method headers */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COPY_ENGINE */
 
+#include <mc/mc_experimental.h>
+
 #include "internal/types.h"
 #include "internal/log.h"
 #include "internal/rm.h"

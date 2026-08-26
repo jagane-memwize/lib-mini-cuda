@@ -379,6 +379,12 @@ struct mc_ctx {
      * at the Hopper descriptor unconditionally. */
     const mc_arch_desc_t          *arch;
 
+    /* Features actually brought up: what the architecture and build can
+     * provide, intersected with what the caller requested.  Queried through
+     * mc_feature_supported(); channels and VA spaces for anything not in
+     * here were never created. */
+    uint64_t                       features;
+
     /* Device fds + UVM fd */
     int                            ctl_fd;
     int                            dev_fd;

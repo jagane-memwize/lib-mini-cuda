@@ -121,8 +121,22 @@ mc_status_t mc_memcpy(mc_ctx_t *ctx, const void *dst_ptr, const void *src_ptr,
                "(SM kernel only addresses carrier VAS)");
       return MC_EINVAL;
     }
+    /* The SM-authored arm needs a compute channel and a doorbell PTE, and
+     * it is compiled out of a non-experimental build.  Either way the
+     * arguments are fine and the capability is missing, which is
+     * MC_EUNSUPPORTED rather than MC_EINVAL. */
+    if (!mc_feature_supported(ctx, MC_FEAT_XFER_SM))
+    {
+      WARN_LOG("mc_memcpy(MC_XFER_SM): %s unavailable on this GPU/build",
+               mc_feature_name(MC_FEAT_XFER_SM));
+      return MC_EUNSUPPORTED;
+    }
+#if MC_ENABLE_EXPERIMENTAL
     return mc_sm_owner_submit(ctx, src_slot->vas, src_slot->gpu_va,
                               dst_slot->gpu_va, (uint32_t)n);
+#else
+    return MC_EUNSUPPORTED;
+#endif
   }
 
   /* MC_XFER_HOST: pick the channel by (vas, role).  UVM-VAS routes

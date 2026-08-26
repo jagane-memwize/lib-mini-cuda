@@ -55,6 +55,8 @@
 #include "class/clb1c0.h"        /* INVALIDATE_SKED_CACHES */
 #include "class/cla06fsubch.h"   /* NVA06F_SUBCHANNEL_COMPUTE */
 
+#include <mc/mc_experimental.h>
+
 #include "internal/types.h"
 #include "internal/log.h"
 #include "internal/rm.h"

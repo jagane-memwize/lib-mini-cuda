@@ -35,9 +35,18 @@ MC_1.0 {
     /* Transfer */
     mc_memcpy;
 
-    /* Research / experimental entrypoints.  These move behind
-     * MC_ENABLE_EXPERIMENTAL and into mc_experimental.h later; when they do,
-     * this block becomes conditional and these names leave the stable set. */
+    /* Capability query.  Stable: which optional features a GPU provides is
+     * something a caller has to be able to ask, since the answer is a
+     * property of the silicon -- Ampere and Ada can never offer the
+     * doorbell-dependent paths. */
+    mc_init_ex;
+    mc_feature_supported;
+    mc_feature_name;
+
+    /* Research entrypoints, declared in mc_experimental.h.  Present only in
+     * an MC_ENABLE_EXPERIMENTAL build; a stable build simply does not define
+     * these symbols, and listing a name that no object defines is harmless
+     * to the linker.  See the header for the (lack of) stability contract. */
     mc_dbell_demo_ring;
     mc_memcpy_gpu_doorbell_ce;
     mc_memcpy_gpu_doorbell_sm;

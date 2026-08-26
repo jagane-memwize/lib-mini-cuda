@@ -29,6 +29,7 @@
 #include <stdlib.h>
 
 #include <mc/mc.h>
+#include <mc/mc_experimental.h>
 
 int main(void)
 {

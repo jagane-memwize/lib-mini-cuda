@@ -53,6 +53,7 @@
 #include <string.h>
 
 #include <mc/mc.h>
+#include <mc/mc_experimental.h>
 #include "mc_test_helpers.h"
 
 #define DEFAULT_SIZE   (4ULL * 1024ULL * 1024ULL)  /* 4 MiB */

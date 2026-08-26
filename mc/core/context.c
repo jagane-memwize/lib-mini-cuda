@@ -37,6 +37,7 @@
 #include "internal/vaspace.h"
 #include "internal/alloc.h"
 #include "internal/channel.h"
+#include "internal/feature.h"
 #include "hal/arch.h"
 #include "hal/detect.h"
 
@@ -70,10 +71,16 @@ static void mc_log_init_summary(mc_ctx_t *ctx)
 
 mc_status_t mc_init(mc_ctx_t **out_ctx)
 {
+  return mc_init_ex(out_ctx, NULL);
+}
+
+mc_status_t mc_init_ex(mc_ctx_t **out_ctx, const mc_init_params_t *params)
+{
   mc_ctx_t              *ctx;
   NvU32                  lce_engine_type;
   mc_status_t            fail_status = MC_EIOCTL;
   mc_rm_version_result_t version_result;
+  uint64_t               wanted, available;
   char                    loaded_version[NV_RM_API_VERSION_STRING_LENGTH] = {};
 
   if (out_ctx == NULL) return MC_EINVAL;
@@ -146,6 +153,18 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
     goto fail;
   }
 
+  /* Reconcile what the caller asked for with what this GPU and build can
+   * provide.  Requesting something unavailable is not an error -- a caller
+   * that hands over MC_FEATURES_ALL wants "everything you have", not a
+   * failure on the first thing you lack -- so the request is intersected and
+   * the result queried afterwards with mc_feature_supported(). */
+  available      = mc_features_available(ctx->arch);
+  wanted         = (params != NULL && params->features != 0)
+                     ? params->features
+                     : MC_FEATURES_ALL;
+  ctx->features  = available & wanted;
+  mc_features_log(ctx->features, available);
+
   /* Hold boost clocks for the life of the client, as libcuda does —
    * otherwise a copy-only workload runs the CE at the idle SM clock.
    * See rm_perf_boost. */
@@ -180,42 +199,56 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
   ctx->vf_doorbell = (volatile uint32_t *)(ctx->usermode_bar1_cpu
                                            + MC_VF_DOORBELL_OFFSET);
 
-  /* Sysmem carrier VAS (DMA + compute channels) + its BAR1 doorbell
-   * PTE.  Brought up before the channels themselves so neither has
-   * to embed VAS handles in its extras. */
-  if (mc_va_space_init_carrier(ctx) != 0) goto fail;
-  if (mc_va_space_install_doorbell_pte(ctx, &ctx->vas[MC_VAS_SYSMEM_CARRIER])
-      != 0)
-    goto fail;
+  /* Sysmem carrier VAS (DMA + compute channels).  Brought up before the
+   * channels themselves so neither has to embed VAS handles in its extras. */
+  if (mc_feature_supported(ctx, MC_FEAT_CARRIER_SYSMEM))
+  {
+    if (mc_va_space_init_carrier(ctx) != 0) goto fail;
 
-  /* FB carrier VAS (HOST_DMA + SM_VICTIM_DMA + COMPUTE channels with
-   * FB-resident, BAR1-aliased channel resources) + its own BAR1
-   * doorbell PTE.  Channels here exist for the SM-author hot path
-   * where every byte of the submission protocol is FB↔GPU-L2 and the
-   * only PCIe MWr is the doorbell. */
-  if (mc_va_space_init_carrier_fb(ctx) != 0) goto fail;
-  if (mc_va_space_install_doorbell_pte(ctx, &ctx->vas[MC_VAS_FB_CARRIER])
-      != 0)
-    goto fail;
+    /* The doorbell PTE maps the BAR1 usermode aperture into the carrier, so
+     * it only exists where that aperture does. */
+    if (mc_feature_supported(ctx, MC_FEAT_CE_DOORBELL_RING)
+        && mc_va_space_install_doorbell_pte(
+               ctx, &ctx->vas[MC_VAS_SYSMEM_CARRIER]) != 0)
+      goto fail;
+  }
+
+  /* FB carrier VAS: channel resources in FB with BAR1-aliased CPU mappings,
+   * so an SM-authored submission never crosses PCIe except for the doorbell
+   * ring.  Requires the BAR1 aperture, so it is absent on architectures
+   * without one. */
+  if (mc_feature_supported(ctx, MC_FEAT_CARRIER_FB))
+  {
+    if (mc_va_space_init_carrier_fb(ctx) != 0) goto fail;
+    if (mc_va_space_install_doorbell_pte(ctx, &ctx->vas[MC_VAS_FB_CARRIER])
+        != 0)
+      goto fail;
+  }
 
   /* UVM channel (CE; mc_memcpy/d2h). */
   if (mc_uvm_channel_init(ctx, lce_engine_type) != 0) goto fail;
 
-  /* Sysmem-carrier channels: HOST_DMA (also reused as the SM victim
-   * for the existing sysmem SM-author path) + COMPUTE. */
-  if (mc_dma_channel_init(ctx, MC_VAS_SYSMEM_CARRIER, MC_ROLE_HOST_DMA,
-                          lce_engine_type) != 0) goto fail;
-  if (mc_compute_channel_init(ctx, MC_VAS_SYSMEM_CARRIER) != 0) goto fail;
+  /* Sysmem-carrier channels: HOST_DMA (also the SM victim for the sysmem
+   * SM-author path) + COMPUTE. */
+  if (mc_feature_supported(ctx, MC_FEAT_CARRIER_SYSMEM)
+      && mc_dma_channel_init(ctx, MC_VAS_SYSMEM_CARRIER, MC_ROLE_HOST_DMA,
+                             lce_engine_type) != 0) goto fail;
+  if (mc_feature_supported(ctx, MC_FEAT_COMPUTE_LAUNCH)
+      && mc_compute_channel_init(ctx, MC_VAS_SYSMEM_CARRIER) != 0) goto fail;
 
   /* FB-carrier channels: HOST_DMA (host-author CE on FB-resident PB),
    * SM_VICTIM_DMA (CE channel reserved as the SM author's victim),
    * COMPUTE.  All three CE channels reuse the same non-GRCE LCE
    * engine type — Hopper allows multiple channels per engine. */
-  if (mc_dma_channel_init(ctx, MC_VAS_FB_CARRIER, MC_ROLE_HOST_DMA,
-                          lce_engine_type) != 0) goto fail;
-  if (mc_dma_channel_init(ctx, MC_VAS_FB_CARRIER, MC_ROLE_SM_VICTIM_DMA,
-                          lce_engine_type) != 0) goto fail;
-  if (mc_compute_channel_init(ctx, MC_VAS_FB_CARRIER) != 0) goto fail;
+  if (mc_feature_supported(ctx, MC_FEAT_CARRIER_FB))
+  {
+    if (mc_dma_channel_init(ctx, MC_VAS_FB_CARRIER, MC_ROLE_HOST_DMA,
+                            lce_engine_type) != 0) goto fail;
+    if (mc_dma_channel_init(ctx, MC_VAS_FB_CARRIER, MC_ROLE_SM_VICTIM_DMA,
+                            lce_engine_type) != 0) goto fail;
+    if (mc_feature_supported(ctx, MC_FEAT_COMPUTE_LAUNCH)
+        && mc_compute_channel_init(ctx, MC_VAS_FB_CARRIER) != 0) goto fail;
+  }
 
   mc_log_init_summary(ctx);
   *out_ctx = ctx;

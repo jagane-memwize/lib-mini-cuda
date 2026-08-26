@@ -14,7 +14,8 @@ The mc test set has two shapes:
       mc_demo, mc_carrier_demo, mc_sm_owner_demo,
       mc_compute_dbell_chain_demo, mc_dbell_chain_demo
   - one-shot tests with no flags:
-      mc_allocation_test, mc_compute_dbell_demo, mc_dbell_demo
+      mc_allocation_test, mc_compute_dbell_demo, mc_dbell_demo,
+      mc_features_demo
 
 For each test we exercise the cross product of relevant parameters
 (small + big sizes, multiple iters, both directions, both carriers
@@ -128,7 +129,8 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
                 ))
 
     # ── one-shot tests: just exercise that they still link/run ──
-    for binary in ["mc_allocation_test", "mc_compute_dbell_demo", "mc_dbell_demo"]:
+    for binary in ["mc_allocation_test", "mc_compute_dbell_demo", "mc_dbell_demo",
+                   "mc_features_demo"]:
         cells.append(Cell(
             binary=binary,
             args=[],
@@ -168,7 +170,23 @@ class Result:
     note: str = ""
 
     @property
+    def skipped(self) -> bool:
+        """The GPU or build cannot provide what this cell exercises.
+
+        Not every supported architecture can do everything libmc implements:
+        Ampere and Ada have no BAR1 usermode aperture, so no doorbell PTE, so
+        no FB carrier and nothing SM-authored.  A demo that reports the
+        capability as absent has not failed -- there is nothing there to
+        test -- and counting it as a failure would make a correct Ampere run
+        look broken.
+        """
+        out = (self.stdout + self.stderr).lower()
+        return ("unsupported" in out or "unavailable on this gpu" in out)
+
+    @property
     def ok(self) -> bool:
+        if self.skipped:
+            return True
         if self.rc != 0:
             return False
         if self.cell.extra_check is None:
@@ -300,12 +318,14 @@ def main(argv: list[str]) -> int:
         print(fmt_result(r), flush=True)
 
     # ── summary ──
-    passed = [r for r in results if r.ok]
-    failed = [r for r in results if not r.ok]
+    skipped = [r for r in results if r.skipped]
+    passed  = [r for r in results if r.ok and not r.skipped]
+    failed  = [r for r in results if not r.ok]
 
     print()
-    print(f"summary: {len(passed)}/{len(results)} passed, "
-          f"{len(failed)} failed, "
+    skip_note = f", {len(skipped)} skipped (unsupported)" if skipped else ""
+    print(f"summary: {len(passed)}/{len(results) - len(skipped)} passed, "
+          f"{len(failed)} failed{skip_note}, "
           f"total wall {sum(r.duration_s for r in results):.1f}s")
 
     if failed:

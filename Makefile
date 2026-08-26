@@ -84,18 +84,30 @@ LIBMC_SONAME := libmc.so.0
 LIBMC_REAL   := lib/$(LIBMC_SONAME)
 LIBMC        := lib/libmc.so
 LIBMC_MAP    := mc/libmc.map
+# Experimental research paths.  On by default while the library IS a research
+# vehicle; MC_ENABLE_EXPERIMENTAL=0 produces a build whose .so does not contain
+# them and whose exported ABI is the ten stable functions plus the feature
+# queries.  The flag is compiled into the feature engine too, so
+# mc_feature_supported() reports the truth for the build in hand.
+MC_ENABLE_EXPERIMENTAL ?= 1
+
 # Sources, grouped by layer.  core/ and hal/ are architecture-neutral;
 # driver/ wraps the RM and UVM ioctl surfaces; arch/<name>/ holds
 # per-architecture code; experimental/ holds the research paths.
 MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
+                mc/core/feature.c \
                 mc/core/memcpy.c mc/core/vaspace.c
 MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c mc/hal/registry.c \
                 mc/hal/detect.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
 MC_ARCH_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/ops.c \
                 mc/arch/hopper/qmd_v04.c
+ifeq ($(MC_ENABLE_EXPERIMENTAL),1)
 MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c \
                 mc/experimental/doorbell.c
+else
+MC_EXP_SRCS  :=
+endif
 
 MC_LIB_SRCS := $(MC_CORE_SRCS) $(MC_HAL_SRCS) $(MC_DRV_SRCS) \
                $(MC_ARCH_SRCS) $(MC_EXP_SRCS)
@@ -115,7 +127,8 @@ DEPFLAGS := -MMD -MP
 # Library-only compile flags.  MC_BUILDING_LIBMC turns on the MC_API
 # visibility attribute in mc.h; -fvisibility=hidden makes every other symbol
 # library-private.  See mc/libmc.map for the link-time half of the contract.
-MC_LIB_CPPFLAGS := -DMC_BUILDING_LIBMC
+MC_LIB_CPPFLAGS := -DMC_BUILDING_LIBMC \
+                   -DMC_ENABLE_EXPERIMENTAL=$(MC_ENABLE_EXPERIMENTAL)
 MC_LIB_CFLAGS   := -fPIC -fvisibility=hidden
 
 # Unit tests are auto-discovered like tests/mc.  Each test may override the
@@ -143,6 +156,8 @@ HOPPER_BACKEND_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/ops.c \
 
 UNIT_WRAP_mc_methods_test       := none
 UNIT_SRCS_mc_methods_test       := mc/hal/methods.c $(HOPPER_BACKEND_SRCS)
+UNIT_WRAP_mc_feature_test       := none
+UNIT_SRCS_mc_feature_test       := mc/core/feature.c mc/driver/rm.c
 UNIT_WRAP_mc_arch_desc_test     := none
 UNIT_SRCS_mc_arch_desc_test     := $(HOPPER_BACKEND_SRCS)
 UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
@@ -206,7 +221,8 @@ bin lib $(BUILD_DIR):
 # headers.  Future tests added to tests/mc/ pick up the helpers
 # automatically.
 bin/%: tests/mc/%.c $(MC_HELPERS) $(LIBMC) | bin
-	$(CC) $(CFLAGS) $(MC_PUBLIC_INC) -Itests/mc -o $@ \
+	$(CC) $(CFLAGS) $(MC_PUBLIC_INC) -Itests/mc \
+	    -DMC_ENABLE_EXPERIMENTAL=$(MC_ENABLE_EXPERIMENTAL) -o $@ \
 	    $< $(MC_HELPERS) -L./lib -lmc \
 	    -Wl,-rpath,'$$ORIGIN/../lib'
 
@@ -407,8 +423,8 @@ $(LIBMC): $(LIBMC_REAL)
 .SECONDEXPANSION:
 bin/%: tests/unit/%.c $$(call unit_srcs,$$*) compat/nvidia.mk \
        | bin check-nvidia-source
-	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(SDK_INC) $(MC_INC) -o $@ \
-	    $< $(call unit_srcs,$*) \
+	$(CC) $(CFLAGS) $(MC_CPPFLAGS) $(MC_LIB_CPPFLAGS) $(SDK_INC) $(MC_INC) \
+	    -o $@ $< $(call unit_srcs,$*) \
 	    $(foreach w,$(call unit_wrap,$*),-Wl,--wrap=$(w))
 
 # Guard the export contract: the MC_API markers in mc/include/mc/mc.h, the version script,
@@ -420,14 +436,17 @@ bin/%: tests/unit/%.c $$(call unit_srcs,$$*) compat/nvidia.mk \
 check-abi: $(LIBMC)
 	@nm -D --defined-only $(LIBMC) | awk '{print $$3}' | sed 's/@@.*//' \
 	    | grep '^mc_' | sort -u > $(BUILD_DIR)/.abi-actual
-	@grep '^MC_API' mc/include/mc/mc.h \
+	@{ grep -h '^MC_API' mc/include/mc/mc.h;                                  \
+	   [ "$(MC_ENABLE_EXPERIMENTAL)" = "1" ]                                  \
+	     && grep -h '^MC_API' mc/include/mc/mc_experimental.h;                \
+	   true; }                                                                \
 	    | sed -E 's/.*[ *](mc_[a-z_]+)\(.*/\1/' | sort -u > $(BUILD_DIR)/.abi-expected
 	@if ! diff -u $(BUILD_DIR)/.abi-expected $(BUILD_DIR)/.abi-actual; then \
-	  echo "ERROR: exported ABI does not match the MC_API set in mc/include/mc/mc.h." >&2; \
-	  echo "       Reconcile mc/include/mc/mc.h, mc/libmc.map, and the definitions." >&2; \
+	  echo "ERROR: exported ABI does not match the MC_API set in the public headers." >&2; \
+	  echo "       Reconcile the headers, mc/libmc.map, and the definitions." >&2; \
 	  exit 1;                                                                 \
 	fi
-	@echo "  OK      ABI: $$(wc -l < $(BUILD_DIR)/.abi-actual) exported symbols match mc/include/mc/mc.h"
+	@echo "  OK      ABI: $$(wc -l < $(BUILD_DIR)/.abi-actual) exported symbols match the public headers"
 
 # Guard that every built binary can actually resolve its libraries at exec
 # time.  A build+link success does not imply this: the SONAME recorded in
@@ -438,6 +457,11 @@ check-abi: $(LIBMC)
 .PHONY: check-link
 check-link: $(MC_BINS) $(LIBMC)
 	@fail=0; \
+	undef=$$(ldd -r $(LIBMC) 2>&1 | grep "undefined symbol" || true); \
+	if [ -n "$$undef" ]; then \
+	  echo "ERROR: $(LIBMC) has undefined symbols:" >&2; \
+	  echo "$$undef" >&2; fail=1; \
+	fi; \
 	for b in $(MC_BINS); do \
 	  missing=$$(ldd -r $$b 2>/dev/null | grep "not found" || true); \
 	  if [ -n "$$missing" ]; then \
@@ -446,7 +470,7 @@ check-link: $(MC_BINS) $(LIBMC)
 	  fi; \
 	done; \
 	if [ $$fail -ne 0 ]; then exit 1; fi
-	@echo "  OK      link: $(words $(MC_BINS)) binaries resolve all libraries"
+	@echo "  OK      link: $(LIBMC) + $(words $(MC_BINS)) binaries fully resolved"
 
 # ── Utility ────────────────────────────────────────────────────────────────
 clean:

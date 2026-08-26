@@ -263,9 +263,36 @@ the public root alone and never see `internal/`.
 
 **Public surface:**
 
-- `include/mc/mc.h` — the whole public API.  Fifteen functions, all marked
+- `include/mc/mc.h` — the stable API: lifecycle, allocation, copies, and the
+  feature queries.  Thirteen functions.
+- `include/mc/mc_experimental.h` — the research entrypoints, behind
+  `MC_ENABLE_EXPERIMENTAL`.  Not covered by the stability the rest of the API
+  implies; a `MC_ENABLE_EXPERIMENTAL=0` build does not contain them.  Fifteen functions, all marked
   `MC_API`; everything else is hidden by `-fvisibility=hidden` and the
-  `mc/libmc.map` version script.  `make check-abi` verifies the two agree.
+  `mc/libmc.map` version script.  `make check-abi` verifies the headers and
+  the exported ABI agree, and `make check-link` that nothing is left
+  unresolved.
+
+### Optional features
+
+Not every GPU can do everything libmc implements.  Ampere and Ada have no
+BAR1 usermode aperture, so there is nowhere to install a doorbell PTE, so the
+FB carrier and every SM-authored path are permanently unavailable there — a
+property of the silicon rather than a gap to close.
+
+So features are queried, not assumed:
+
+```c
+if (mc_feature_supported(ctx, MC_FEAT_XFER_SM))
+    mc_memcpy(ctx, dst, src, n, MC_XFER_SM);
+```
+
+`mc_init_ex()` takes a requested feature mask; anything not requested is
+never brought up, which for `MC_FEATURES_BASIC` skips both carrier VA spaces
+and five of the six channels.  Availability is *derived* from the
+architecture descriptor rather than declared per backend, so adding a backend
+cannot forget to update a feature list — there is no feature list.  An
+operation whose feature is absent returns `MC_EUNSUPPORTED`.
 
 **Private headers** (`internal/`) — each TU includes the ones it uses rather
 than a single umbrella:
@@ -345,6 +372,8 @@ than a single umbrella:
   `mc_malloc_*`, `mc_host_register`/`_unregister`, `mc_free`, `mc_gpu_va`.
   Declared in `internal/alloc.h`.
 - `core/memcpy.c` — `mc_memcpy` and its VAS + agent dispatch.
+- `core/feature.c` — which features this GPU and build provide, derived from
+  the architecture descriptor with dependencies closed transitively.
 - `arch/hopper/qmd_v04.{c,h}` — the Hopper QMD V04 builder, exposed through
   the architecture's compute ops as a single `build_qmd` operation.  The
   field setters are private: they are how a V04 QMD is assembled, not what a
