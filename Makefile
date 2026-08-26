@@ -117,7 +117,27 @@ MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
 MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c mc/hal/registry.c \
                 mc/hal/detect.c mc/hal/cbuf.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
-MC_ARCH_SRCS := $(foreach a,$(MC_ARCHS),$(wildcard mc/arch/$(a)/*.c))
+# Some backends carry only a descriptor and share another architecture's
+# implementation: Ada and GA10x both use Ampere's ops table (mc/arch/ampere/
+# ops.c) and its QMD V03 builder (mc/arch/ampere/qmd_v03.c), because they
+# allocate the same usermode and channel classes and use the same QMD version.
+# Selecting one of them without ampere must still compile those, or the
+# library links with mc_arch_ampere_ops and mc_arch_ampere_compute undefined
+# -- which a shared library tolerates, so it builds cleanly and only fails
+# when something links against it.
+ARCH_SHARES_ada          := ampere
+ARCH_SHARES_ampere_ga10x := ampere
+
+# Directories contributing sources: the selected backends in full, plus the
+# implementations they share.  A shared-but-unselected directory contributes
+# everything EXCEPT its backend.c, so its descriptor is not linked and it gets
+# no MC_HAVE_ARCH_ define -- sharing an implementation must not silently
+# register a backend the caller did not ask for.
+MC_ARCH_SHARED := $(filter-out $(MC_ARCHS),\
+                    $(sort $(foreach a,$(MC_ARCHS),$(ARCH_SHARES_$(a)))))
+MC_ARCH_SRCS := $(foreach a,$(MC_ARCHS),$(wildcard mc/arch/$(a)/*.c)) \
+                $(foreach a,$(MC_ARCH_SHARED),\
+                  $(filter-out mc/arch/$(a)/backend.c,$(wildcard mc/arch/$(a)/*.c)))
 # One -D per enabled architecture, so hal/registry.c can compile in exactly
 # the backends whose sources are present.  A missing define and a missing
 # source would otherwise disagree, and the failure would be a link error
@@ -528,6 +548,41 @@ check-link: $(MC_BINS) $(LIBMC)
 	if [ $$fail -ne 0 ]; then exit 1; fi
 	@echo "  OK      link: $(LIBMC) + $(words $(MC_BINS)) binaries fully resolved"
 
+# Every backend must build on its own.  MC_ARCHS exists so a deployment can
+# carry one architecture, and a backend that shares another's implementation
+# (see ARCH_SHARES_*) breaks that silently: a shared library tolerates
+# undefined symbols, so the trimmed build succeeds and only fails when
+# something links against it.  Ada and GA10x did exactly that.
+#
+# Builds each architecture alone into a scratch tree and asserts the resulting
+# library has no undefined mc_* symbol.  Not part of the default gate -- it is
+# one full library build per architecture -- but cheap enough to run before
+# adding or resharing a backend.
+.PHONY: check-arch-solo
+check-arch-solo:
+	@rc=0; \
+	for a in $(MC_ARCHS); do \
+	  d=build/solo/$$a; rm -rf $$d; mkdir -p $$d; \
+	  if $(MAKE) --no-print-directory MC_ARCHS=$$a BUILD_DIR=$$d/obj \
+	       LIBMC_REAL=$$d/libmc.so.0 LIBMC=$$d/libmc.so \
+	       $$d/libmc.so.0 >$$d/build.log 2>&1; then \
+	    u=$$(nm -D --undefined-only $$d/libmc.so.0 2>/dev/null \
+	         | grep " mc_" || true); \
+	    if [ -n "$$u" ]; then \
+	      echo "  FAIL    MC_ARCHS=$$a: library has undefined mc_* symbols:" >&2; \
+	      echo "$$u" | sed 's/^/            /' >&2; \
+	      echo "          add its shared implementation to ARCH_SHARES_$$a" >&2; \
+	      rc=1; \
+	    else \
+	      echo "  OK      MC_ARCHS=$$a builds standalone"; \
+	    fi; \
+	  else \
+	    echo "  FAIL    MC_ARCHS=$$a did not build; see $$d/build.log" >&2; \
+	    rc=1; \
+	  fi; \
+	done; \
+	exit $$rc
+
 # ── Utility ────────────────────────────────────────────────────────────────
 clean:
 	rm -rf bin lib $(BUILD_DIR)
@@ -545,6 +600,7 @@ help:
 	@echo "  libmc            build $(LIBMC) — the mc library"
 	@echo "  check-nvidia-source  validate NVIDIA_SRC is driver $(MC_NVIDIA_VERSION)"
 	@echo "  test-unit        run host-only unit tests (auto-discovered)"
+	@echo "  check-arch-solo  build each MC_ARCHS backend on its own"
 	@echo "  check-abi        verify exported symbols match mc.h's MC_API set"
 	@echo "  kernels          regenerate the embedded device-kernel SASS headers"
 	@echo "  clean            remove bin/ and lib/ directories"
