@@ -31,24 +31,25 @@
  * Everything below is established from the pinned headers; see the header
  * name against each field.
  *
- * KNOWN BLOCKER — channel bring-up does not yet work on this architecture.
- * ----------------------------------------------------------------------
+ * USERD placement
+ * ---------------
  * NV_RAMRL_ENTRY_CHAN_USERD_PTR_HI_HW is 8 bits on GA100
- * (swref/published/ampere/ga100/dev_ram.h) but 20 bits on GH100, so a
- * channel's USERD must sit below 2^40 here where Hopper allows 2^52.  RM
- * enforces it in kchannelIsUserdAddrSizeValid_GA100 and returns
- * NV_ERR_INVALID_ADDRESS from the channel allocation.
+ * (swref/published/ampere/ga100/dev_ram.h:28) against 20 on GH100, so a
+ * channel's USERD must sit below 2^40 here where Hopper reaches 2^52.  A host
+ * physical address does not reliably do that, so USERD cannot live in sysmem
+ * -- cap.userd_requires_vidmem below, which core/channel.c honours when
+ * allocating the GPFIFO+USERD buffer.
  *
- * libmc's UVM channel places GPFIFO+USERD in vidmem, which on the A100 tested
- * (a passthrough VM) resolves to roughly 1 TiB physical -- fine on Hopper,
- * out of range here.  The fix is a placement decision, not a constant: where
- * USERD may live is now an architecture property.  Rather than guess, the
- * next step is to trace what libcuda does for a channel on Ampere and match
- * it, which is the same method that established every other bit-exact
- * behaviour in this library.
+ * Established by tracing, not inference: libcuda on this hardware puts USERD
+ * in vidmem for every channel it creates, and the instrumented driver's
+ * fifo/userd_resolve record shows libmc's sysmem placement resolving to
+ * 1.007 TiB and being rejected while a vidmem one at 322 MiB is accepted.
+ * See the field comment in hal/arch.h and tests/unit/mc_userd_addr_test.c,
+ * which machine-checks the widths against the headers.
  *
- * Detection, feature derivation and the reduced feature set are all verified
- * working on real A100 silicon; only channel bring-up is outstanding.
+ * Detection, feature derivation, the reduced feature set and host transfers
+ * on the UVM and sysmem-carrier VA spaces are all verified on real A100
+ * silicon.
  */
 
 #include "class/cl50a0.h"        /* NV50_MEMORY_VIRTUAL */
@@ -118,6 +119,11 @@ const mc_arch_desc_t mc_arch_ampere = {
         .gpfifo_has_ext_base   = false,
         /* Nvc56fControl publishes GPGet at 0x88. */
         .userd_exposes_gpget   = true,
+        /* NV_RAMRL_ENTRY_CHAN_USERD_PTR_HI_HW is 8 bits here against 20 on
+         * GH100/GB10B, so USERD must sit below 2^40 -- which a host physical
+         * address does not reliably do.  See the field comment in hal/arch.h
+         * for the header evidence and the measured addresses. */
+        .userd_requires_vidmem = true,
     },
 
     .ops     = &mc_arch_ampere_ops,

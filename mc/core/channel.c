@@ -77,32 +77,47 @@
  *                             host alias is for one-time SET_OBJECT
  *                             pushbuffer writes and diagnostics.
  *
+ * `is_userd` marks the one buffer that carries USERD.  On an
+ * architecture whose runlist entry cannot hold an arbitrary host
+ * physical address (cap.userd_requires_vidmem — Ampere), that buffer
+ * is forced to vidmem even in a sysmem carrier, because RM rejects the
+ * channel outright otherwise.  See the field comment in hal/arch.h.
+ * This also moves the sysmem carrier onto the split core/vaspace.c
+ * already documents as libcuda's recipe: GPFIFO + USERD in FB,
+ * pushbuffer and semaphore in sysmem.
+ *
  * `*out_h_mem` and `*out_cpu_ptr` are populated on success.  Returns
  * 0 on success, -1 on failure.
  */
 static int mc_channel_alloc_resource(mc_ctx_t *ctx, mc_va_space_kind_t kind,
-                                     NvU64 size,
+                                     NvU64 size, bool is_userd,
                                      NvHandle *out_h_mem, void **out_cpu_ptr)
 {
+  bool want_vidmem = (kind == MC_VAS_KIND_CARRIER_FB)
+                     || (is_userd && ctx->arch->cap.userd_requires_vidmem);
+
   *out_cpu_ptr = NULL;
-  if (kind == MC_VAS_KIND_CARRIER)
+  if (kind != MC_VAS_KIND_CARRIER && kind != MC_VAS_KIND_CARRIER_FB)
+  {
+    return -1;
+  }
+
+  if (!want_vidmem)
   {
     *out_h_mem = rm_alloc_sysmem_wc_at(ctx->ctl_fd, ctx->dev_fd, ctx->h_client,
                                     ctx->h_device, size, NULL, out_cpu_ptr);
   }
-  else if (kind == MC_VAS_KIND_CARRIER_FB)
+  else
   {
     /* No want_va: FB BAR1 aliases for channel resources don't need
      * the Paper-F1 VA pool — they have no GPU VA == CPU VA invariant
      * to maintain (the GPU sees them via the carrier's bump-allocated
-     * GPU VA, which is unrelated to where the host BAR1 mmap lands). */
+     * GPU VA, which is unrelated to where the host BAR1 mmap lands).
+     * This is the same shape the UVM channel already uses for its own
+     * GPFIFO+USERD, which is the placement measured working on GA100. */
     *out_h_mem = rm_alloc_vidmem_bar1_at(ctx->ctl_fd, MC_DEVICE_DEV_PATH,
                                          ctx->h_client, ctx->h_device,
                                          size, NULL, out_cpu_ptr);
-  }
-  else
-  {
-    return -1;
   }
   return (*out_h_mem == 0 || *out_cpu_ptr == NULL) ? -1 : 0;
 }
@@ -120,8 +135,11 @@ static int mc_channel_alloc_via_carrier(mc_ctx_t *ctx, mc_channel_t *ch)
   /* Three core allocations.  Aperture chosen by the VAS kind:
    * sysmem-carrier gets sysmem allocs, FB-carrier gets vidmem +
    * BAR1-aliased CPU mappings.  Either way the CPU pointer is
-   * read/writeable for bring-up + diagnostics. */
+   * read/writeable for bring-up + diagnostics.  The first buffer
+   * carries USERD, so it may additionally be forced to vidmem by the
+   * architecture — see mc_channel_alloc_resource. */
   if (mc_channel_alloc_resource(ctx, vas->kind, MC_GPFIFO_USERD_SIZE,
+                                /*is_userd=*/true,
                                 &ch->h_gpfifo_mem, &gpfifo_cpu_ptr) != 0)
     return -1;
   ch->gpfifo_cpu  = gpfifo_cpu_ptr;
@@ -129,11 +147,13 @@ static int mc_channel_alloc_via_carrier(mc_ctx_t *ctx, mc_channel_t *ch)
   ch->userd_cpu   = (char *)gpfifo_cpu_ptr + MC_USERD_OFFSET;
 
   if (mc_channel_alloc_resource(ctx, vas->kind, MC_GPFIFO_USERD_SIZE,
+                                /*is_userd=*/false,
                                 &ch->h_pb_mem, &pb_cpu_ptr) != 0)
     return -1;
   ch->pb_cpu = (uint32_t *)pb_cpu_ptr;
 
   if (mc_channel_alloc_resource(ctx, vas->kind, MC_GPFIFO_USERD_SIZE,
+                                /*is_userd=*/false,
                                 &ch->h_sema_mem, &sema_cpu_ptr) != 0)
     return -1;
   ch->sema_ptr = (volatile uint32_t *)sema_cpu_ptr;

@@ -92,5 +92,12 @@ const mc_arch_desc_t mc_arch_hopper = {
 
         /* Nvc86fControl publishes GPGet at 0x88. */
         .userd_exposes_gpget   = true,
+
+        /* NV_RAMRL_ENTRY_CHAN_USERD_PTR_HI_HW is 20 bits on GH100
+         * (swref/published/hopper/gh100/dev_ram.h:28), covering the full 2^52
+         * physical range, so USERD may live in sysmem and the sysmem carrier
+         * needs no special placement.  Ampere's field is 8 bits and does not
+         * -- see the field comment in hal/arch.h. */
+        .userd_requires_vidmem = false,
     },
 };

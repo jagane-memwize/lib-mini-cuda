@@ -182,6 +182,8 @@ UNIT_WRAP_mc_arch_desc_test     := none
 UNIT_SRCS_mc_arch_desc_test     := $(ALL_BACKEND_SRCS) mc/hal/registry.c
 UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
                                    $(ALL_BACKEND_SRCS)
+UNIT_WRAP_mc_userd_addr_test    := none
+UNIT_SRCS_mc_userd_addr_test    := $(ALL_BACKEND_SRCS) mc/hal/registry.c
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
 # `none` means "interpose nothing": a test that links driver code but never

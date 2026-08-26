@@ -102,6 +102,43 @@ struct mc_arch_caps {
      * BLACKWELL_CHANNEL_GPFIFO_A (Nvc96fControl is GPPut-only), which is why
      * progress polling must have a semaphore fallback. */
     bool userd_exposes_gpget;
+
+    /* Whether a channel's USERD must be allocated from vidmem rather than
+     * sysmem, because the runlist entry cannot hold an arbitrary host
+     * physical address.
+     *
+     * NV_RAMRL_ENTRY_CHAN_USERD_PTR_HI_HW holds the HIGH 32 bits of the USERD
+     * physical address, and its width is architecture-specific:
+     *
+     *     ampere/ga100/dev_ram.h:28     (7+1*32):(0+1*32)   ->  8 bits, 2^40
+     *     hopper/gh100/dev_ram.h:28    (19+1*32):(0+1*32)   -> 20 bits, 2^52
+     *     blackwell/gb10b/dev_ram.h:28 (19+1*32):(0+1*32)   -> 20 bits, 2^52
+     *
+     * kchannelIsUserdAddrSizeValid_GA100 round-trips both halves through
+     * SF_MASK and RM returns NV_ERR_INVALID_ADDRESS (0x1e) from the channel
+     * allocation when the address does not fit.
+     *
+     * A host physical address routinely exceeds 2^40, so on Ampere sysmem is
+     * not a safe home for USERD; vidmem is, because FB physical addresses are
+     * GPU-local and start near zero.  Measured on an A100 (2026-08-26) with
+     * the instrumented driver's fifo/userd_resolve record:
+     *
+     *     sysmem USERD  address_space=1  0x101b0174000 (1.007 TiB)  -> 0x1e
+     *     vidmem USERD  address_space=2  0x000014202000 (322 MiB)   -> OK
+     *
+     * The sysmem case overshoots 2^40 by only ~6.9 GiB, so a host with less
+     * RAM could land under the limit and work by luck -- which is why this is
+     * a placement rule rather than something to detect at runtime.  libcuda
+     * sidesteps it entirely by never putting USERD in sysmem: on the same box
+     * all 20 of its channels shared one vidmem NV01_MEMORY_LOCAL_USER
+     * allocation.  That is also the recipe already described in
+     * core/vaspace.c (GPFIFO + USERD in FB, pushbuffer + semaphore in
+     * sysmem).
+     *
+     * Hopper and Blackwell can address the full 2^52 physical range from the
+     * runlist entry, so their sysmem carrier needs no special handling and is
+     * left exactly as it was. */
+    bool userd_requires_vidmem;
 };
 
 /* Forward declaration: the ops table references the descriptor. */
