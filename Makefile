@@ -91,9 +91,13 @@ LIBMC_MAP    := mc/libmc.map
 # mc_feature_supported() reports the truth for the build in hand.
 MC_ENABLE_EXPERIMENTAL ?= 1
 
-# Architectures with a backend in this build.  Trimming it (MC_ARCHS=hopper)
-# gives a leaner library and skips the cubin builds for the others.
-MC_ARCHS ?= hopper ampere ada
+# Architectures with a backend in this build: every directory under mc/arch/.
+# Discovered rather than listed, so adding a backend really is adding a
+# directory -- a hand-maintained list here would silently compile nothing for
+# a new mc/arch/<name>/ and the omission would look like the backend not
+# working.  Trimming it (MC_ARCHS=hopper) gives a leaner library and skips the
+# cubin builds for the others.
+MC_ARCHS ?= $(sort $(notdir $(patsubst %/,%,$(wildcard mc/arch/*/))))
 
 # SM version each architecture's kernels are compiled for.  SASS is not
 # portable across these, which is why every architecture needs its own cubin

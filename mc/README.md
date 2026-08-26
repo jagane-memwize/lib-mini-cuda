@@ -13,9 +13,10 @@ public API.  It supports:
 - Allocation in either the **UVM-managed VA space** (Paper-F1
   anchored, single-pool ergonomics) or the **carrier VA space** (the
   non-UVM FERMI_VASPACE_A shared by the DMA + compute channels).
-- A **GPU-resident submission** path: a HOPPER_COMPUTE_A SM thread
-  authors the entire CE-channel submission (pushbuffer, GPFIFO entry,
-  USERD GP_PUT, BAR1 doorbell) from device code.
+- A **GPU-resident submission** path: an SM thread authors the entire
+  CE-channel submission (pushbuffer, GPFIFO entry, USERD GP_PUT, BAR1
+  doorbell) from device code.  Needs a BAR1 usermode aperture, so it is
+  Hopper-only today — see *Optional features* below.
 
 ## API (`mc.h`)
 
@@ -240,8 +241,9 @@ FB-carrier path) and `tests/mc/mc_sm_owner_demo.c`.
 
 ## Reference — source layout
 
-The library is split into twelve translation units plus the embedded
-SM-owner kernel, grouped by layer:
+The library is split by layer.  The translation-unit count moves with the
+number of backends compiled in, so it is not quoted here; `MC_LIB_SRCS` in the
+Makefile is the list:
 
 ```
 mc/
@@ -250,7 +252,7 @@ mc/
   core/             architecture-neutral lifecycle and VA-space policy
   driver/           RM and UVM ioctl surfaces
   hal/              method streams and submission primitives
-  arch/<name>/      per-architecture code (today: hopper)
+  arch/<name>/      per-architecture code (hopper, ampere, ada)
   experimental/     research paths
   kernels/          device-side sources
 ```
@@ -267,7 +269,8 @@ the public root alone and never see `internal/`.
   feature queries.  Thirteen functions.
 - `include/mc/mc_experimental.h` — the research entrypoints, behind
   `MC_ENABLE_EXPERIMENTAL`.  Not covered by the stability the rest of the API
-  implies; a `MC_ENABLE_EXPERIMENTAL=0` build does not contain them.  Fifteen functions, all marked
+  implies; a `MC_ENABLE_EXPERIMENTAL=0` build does not contain them.  Five
+  functions.  Both headers mark every entry point
   `MC_API`; everything else is hidden by `-fvisibility=hidden` and the
   `mc/libmc.map` version script.  `make check-abi` verifies the headers and
   the exported ABI agree, and `make check-link` that nothing is left
@@ -275,12 +278,18 @@ the public root alone and never see `internal/`.
 
 ### Selecting architectures
 
-`MC_ARCHS` names the backends compiled in (default: every one that exists).
-It drives three things at once — which `mc/arch/<name>/*.c` are compiled,
-which `-DMC_HAVE_ARCH_<NAME>` the registry sees, and which cubins are built —
-so the source list, the registry table and the embedded kernels cannot
-disagree. An empty selection fails at compile time rather than producing a
-library that detects nothing.
+`MC_ARCHS` names the backends compiled in.  It defaults to every directory
+under `mc/arch/`, discovered with a wildcard rather than listed, so adding a
+backend really is adding a directory: a hand-maintained list would compile
+nothing for a new `mc/arch/<name>/` and the omission would look like the
+backend not working.
+
+It drives three things at once — which `mc/arch/<name>/*.c` are compiled, which
+`-DMC_HAVE_ARCH_<NAME>` the registry sees, and which cubins are built — so the
+source list, the registry table and the embedded kernels cannot disagree.
+Trimming it (`make MC_ARCHS=hopper`) gives a leaner library.  An empty
+selection fails at compile time rather than producing a library that detects
+nothing.
 
 ### Optional features
 
@@ -383,11 +392,25 @@ than a single umbrella:
 - `core/memcpy.c` — `mc_memcpy` and its VAS + agent dispatch.
 - `core/feature.c` — which features this GPU and build provide, derived from
   the architecture descriptor with dependencies closed transitively.
-- `arch/hopper/qmd_v04.{c,h}` — the Hopper QMD V04 builder, exposed through
-  the architecture's compute ops as a single `build_qmd` operation.  The
-  field setters are private: they are how a V04 QMD is assembled, not what a
-  caller asks for, and an Ampere V03 backend implements one function rather
-  than nine.
+- `arch/hopper/qmd_v04.{c,h}`, `arch/ampere/qmd_v03.{c,h}` — the QMD builders,
+  each exposed through its architecture's compute ops as a single `build_qmd`
+  operation.  The field setters stay private: they are how a QMD of that
+  version is assembled, not what a caller asks for, so a new version
+  implements one function rather than nine.  Ada shares Ampere's V03 — it
+  brings its own compute *class* but not its own QMD layout.
+
+  V03 is not V04 with fields moved.  It is 256 bytes against 384, sets
+  `SM_GLOBAL_CACHING_ENABLE` where V04 does not, stores constant-buffer
+  addresses unshifted where V04 stores them `>>6`, names its register-count
+  field `REGISTER_COUNT_V`, and has no `QMD_TYPE` field at all.  Neither
+  version's header ships in the pinned tree — it carries only Kepler's
+  `cla0c0qmd.h` — so both follow Mesa NVK, and `tests/unit/mc_qmd_test.c` pins
+  the result with golden dwords rather than trusting the transcription.
+
+  Kernel-argument offsets inside CB0 are a separate axis from the QMD version:
+  nvcc places them at `0x210` on sm_90 and `0x160` on sm_80.  They live in the
+  compute ops as data, and `hal/cbuf.c` fills CB0 from them — the procedure is
+  identical everywhere, only the offsets differ.
 - `experimental/doorbell.c` — host-authored CE-doorbell demos
   (`mc_dbell_demo_ring`, `mc_memcpy_gpu_doorbell_ce`): the copy engine
   writes a token to the BAR1 doorbell aperture through a GPU MMU PTE.
@@ -406,8 +429,9 @@ than a single umbrella:
   demonstration that an SM store can ring a BAR1 doorbell and wake PBDMA.
   `volatile` is load-bearing — it is what makes the store lower to
   `STG.E.STRONG.SYS` rather than sitting in L1.
-- `kernels/sm_owner.cu` — single-thread Hopper kernel that authors an
-  entire CE-channel submission from one SM thread.  Uses `st.relaxed.sys.global`
+- `kernels/sm_owner.cu` — single-thread kernel that authors an
+  entire CE-channel submission from one SM thread.  Compiled only for
+  architectures that can ring a doorbell, so Hopper today.  Uses `st.relaxed.sys.global`
   + `membar.sys` for fence discipline; each method-stream dword and
   the GPFIFO entry / USERD GPPut / BAR1 doorbell are emitted as
   system-scope strong-ordered global stores.  Build-time assertion in
@@ -429,6 +453,6 @@ than a single umbrella:
 - [`../docs/mc_architecture.md`](../docs/mc_architecture.md) — concise context,
   VA-space, channel, and submission architecture.
 - [`../docs/compute_kernel_launch.md`](../docs/compute_kernel_launch.md) — the
-  Hopper compute and SM-authored copy chain.
+  compute launch (all backends) and the Hopper-only SM-authored copy chain.
 
 [paper-f1]: https://github.com/maxime-peim/libcuda-research/blob/main/docs/findings.md#paper-f1-va-identity

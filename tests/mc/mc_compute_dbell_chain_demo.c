@@ -88,6 +88,21 @@ int main(int argc, char **argv)
   printf("mc_init ok — UVM + DMA + compute channels ready (size=%zu, dir=%s)\n",
          n, dir_label);
 
+  /* Say why up front rather than failing per-iteration with "failed".  This
+   * chain ends in an SM-issued doorbell write, which needs a BAR1 usermode
+   * aperture to install a PTE against; Ampere and Ada have none, on any
+   * driver.  Without this the demo reported an unexplained error on hardware
+   * that could never have run it. */
+  if (!mc_feature_supported(ctx, MC_FEAT_XFER_SM))
+  {
+    fprintf(stderr,
+            "unsupported: this GPU does not provide %s, which the "
+            "SM-authored doorbell chain requires.\n",
+            mc_feature_name(MC_FEAT_XFER_SM));
+    mc_fini(ctx);
+    return 0;
+  }
+
   d_buf  = mc_malloc_device(ctx, n, MC_VAS_UVM);
   h_buf  = mc_malloc_host  (ctx, n, MC_VAS_UVM);
   if (!d_buf || !h_buf)

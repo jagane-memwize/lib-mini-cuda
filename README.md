@@ -11,11 +11,24 @@ home of the instrumented driver, trace tooling, captures, and protocol notes.
 
 ## Compatibility
 
-This revision targets NVIDIA driver **610.43.02** and Hopper/H100. Private
-RM/UVM interfaces are not stable APIs, so each `libmc` revision pins the
-matching official `open-gpu-kernel-modules` source as a submodule. At runtime,
-`mc_init()` verifies the loaded driver version before allocating RM objects and
-returns `MC_EVERSION` on a mismatch.
+This revision targets NVIDIA driver **610.43.02**, with backends for
+**Hopper**, **Ampere** and **Ada**. Private RM/UVM interfaces are not stable
+APIs, so each `libmc` revision pins the matching official
+`open-gpu-kernel-modules` source as a submodule. At runtime, `mc_init()`
+verifies the loaded driver version before allocating RM objects and returns
+`MC_EVERSION` on a mismatch, then identifies the GPU and selects its backend,
+returning `MC_EARCH` for a chip it does not support.
+
+Architectures differ in what they can offer, and the difference is in the
+silicon rather than in the library. Ampere and Ada have no BAR1 usermode
+aperture, so they cannot install a doorbell PTE, so the FB carrier VA space and
+every SM-authored path are permanently unavailable there. Ask rather than
+assume:
+
+```c
+if (mc_feature_supported(ctx, MC_FEAT_XFER_SM))
+    mc_memcpy(ctx, dst, src, n, MC_XFER_SM);
+```
 
 ## Build
 
@@ -26,12 +39,14 @@ cd libmc
 make libmc mc-all test-unit
 ```
 
-The normal build uses the committed Hopper kernel bytes and does not require
-the CUDA toolkit. `make sm_owner` regenerates those bytes and requires `nvcc`
-and `cuobjdump`.
+The normal build uses the committed per-architecture kernel bytes and does not
+require the CUDA toolkit. Regenerating them needs `nvcc` and `cuobjdump`; SASS
+does not port across SM versions, so each architecture compiles its own.
 
-The host-only version-contract tests run without a GPU. Running the integration
-demos requires root access to `/dev/nvidia0`, `/dev/nvidiactl`, and
+The host-only tests run without a GPU, and cover more than the version
+contract: chip detection, feature derivation, method streams, QMD layouts and
+the USERD address-width rules are all checked on the host. Running the
+integration demos requires root access to `/dev/nvidia0`, `/dev/nvidiactl`, and
 `/dev/nvidia-uvm`, plus the matching 610.43.02 kernel modules. For example:
 
 ```sh
@@ -43,19 +58,22 @@ sudo ./bin/mc_demo
 - `mc/include/mc/mc.h` — the public header; the only one consumers include
 - `mc/` — library implementation, grouped by layer: `core/` (lifecycle and
   VA-space policy), `driver/` (RM and UVM ioctl surfaces), `hal/` (method
-  streams and submission), `arch/<name>/` (per-architecture code),
-  `experimental/` (research paths), `internal/` (private headers),
-  `kernels/` (device-side sources)
+  streams, submission, and the architecture descriptor), `arch/<name>/`
+  (per-architecture code — `hopper`, `ampere`, `ada`), `experimental/`
+  (research paths), `internal/` (private headers), `kernels/` (device-side
+  sources)
 - `tests/mc/` — integration demos and benchmarks
 - `tests/unit/` — host-only ABI and selection tests
 - `tools/run_mc_tests.py` — integration-test matrix runner
-- `docs/` — concise architecture and Hopper compute-launch guides
+- `docs/` — concise architecture and compute-launch guides
 - `third_party/open-gpu-kernel-modules/` — pinned NVIDIA source submodule
 
 Start with [`mc/README.md`](mc/README.md) for the API and constraints. The
-implementation is intentionally experimental: it writes GPU command streams
-and doorbells directly and has only been exercised on H100 PCIe with Linux
-6.8.
+implementation is intentionally experimental: it writes GPU command streams and
+doorbells directly. It has been exercised on H100 SXM5, A100 SXM4 and L4, all
+on driver 610.43.02 under Linux 5.15. Those are not interchangeable — the H100
+evidence is SXM, not the PCIe card, and each board's PCIe generation sets a
+different transfer ceiling.
 
 ## License
 
