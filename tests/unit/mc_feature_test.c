@@ -54,7 +54,7 @@ static const mc_compute_ops_t stub_compute = {
 static const uint8_t stub_sass[16];
 #define STUB_KERNELS                                            \
     { .sm_owner = { stub_sass, sizeof(stub_sass), 32 },         \
-      .doorbell = { stub_sass, sizeof(stub_sass), 8 } }
+      .store_dword = { stub_sass, sizeof(stub_sass), 8 } }
 
 /* Hopper-shaped: BAR1 aperture, compute support, both cubins present. */
 static const mc_arch_desc_t desc_full = {
@@ -157,7 +157,7 @@ static void test_missing_cubins(void)
 
   /* Anything that launches a kernel needs its bytes. */
   EXPECT_MSG(!HAS(a, MC_FEAT_COMPUTE_LAUNCH),
-             "no-cubins: offers compute_launch with no doorbell cubin");
+             "no-cubins: offers compute_launch with no store_dword cubin");
   EXPECT_MSG(!HAS(a, MC_FEAT_XFER_SM),
              "no-cubins: offers xfer_sm with no sm_owner cubin");
   printf("PASS: absent cubins remove only the features that launch them\n");

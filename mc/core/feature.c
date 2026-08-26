@@ -92,8 +92,12 @@ uint64_t mc_features_available(const mc_arch_desc_t *arch)
         avail |= MC_FEAT_BIT(MC_FEAT_XFER_SM);
 #endif
 
-    /* Likewise the doorbell kernel: the compute-launch demos need its bytes. */
-    if (arch->kernels.doorbell.bytes == NULL || arch->kernels.doorbell.len == 0)
+    /* Likewise the store-dword kernel.  A QMD builder with no kernel to launch
+     * cannot be exercised, so compute_launch means "can launch a kernel", and
+     * that needs the bytes.  Note this blob is NOT about doorbells despite what
+     * its old name suggested: every architecture with compute carries it,
+     * including those that can never ring one. */
+    if (arch->kernels.store_dword.bytes == NULL || arch->kernels.store_dword.len == 0)
         avail &= ~MC_FEAT_BIT(MC_FEAT_COMPUTE_LAUNCH);
 
     /* Close over dependencies.  Iterating to a fixed point rather than

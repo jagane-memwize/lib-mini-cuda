@@ -58,7 +58,7 @@
 #include "hal/arch.h"
 #include "internal/types.h"
 
-#include "doorbell_sass.h"
+#include "store_dword_sass.h"
 
 /* Shared with Ampere by class identity -- see the file comment. */
 extern const mc_arch_ops_t mc_arch_ampere_ops;
@@ -122,10 +122,10 @@ const mc_arch_desc_t mc_arch_ada = {
     .compute = &mc_arch_ampere_compute,
 
     .kernels = {
-        /* Compiled for sm_89 from kernels/doorbell.cu. */
-        .doorbell = { mc_doorbell_kernel_sass,
-                      MC_DOORBELL_SASS_LEN,
-                      MC_DOORBELL_REGS },
+        /* Compiled for sm_89 from kernels/store_dword.cu. */
+        .store_dword = { mc_store_dword_kernel_sass,
+                      MC_STORE_DWORD_SASS_LEN,
+                      MC_STORE_DWORD_REGS },
         /* No sm_owner cubin: no BAR1 aperture, so nothing to ring. */
     },
 };

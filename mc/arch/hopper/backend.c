@@ -30,7 +30,7 @@
 
 /* Generated from the sources under mc/kernels; see KERNEL_RULE in the Makefile. */
 #include "arch/hopper/sm_owner_sass.h"
-#include "arch/hopper/doorbell_sass.h"
+#include "arch/hopper/store_dword_sass.h"
 
 extern const mc_arch_ops_t    mc_arch_hopper_ops;
 extern const mc_compute_ops_t mc_arch_hopper_compute;
@@ -76,8 +76,8 @@ const mc_arch_desc_t mc_arch_hopper = {
     .kernels = {
         .sm_owner = { mc_sm_owner_kernel_sass, MC_SM_OWNER_SASS_LEN,
                       MC_SM_OWNER_REGS },
-        .doorbell = { mc_doorbell_kernel_sass, MC_DOORBELL_SASS_LEN,
-                      MC_DOORBELL_REGS },
+        .store_dword = { mc_store_dword_kernel_sass, MC_STORE_DWORD_SASS_LEN,
+                         MC_STORE_DWORD_REGS },
     },
 
     .cap = {

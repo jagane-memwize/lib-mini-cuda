@@ -65,7 +65,7 @@
 #include "hal/arch.h"
 #include "internal/types.h"
 
-#include "doorbell_sass.h"
+#include "store_dword_sass.h"
 
 extern const mc_arch_ops_t mc_arch_ampere_ops;
 extern const mc_compute_ops_t mc_arch_ampere_compute;
@@ -134,11 +134,11 @@ const mc_arch_desc_t mc_arch_ampere = {
     .compute = &mc_arch_ampere_compute,
 
     .kernels = {
-        /* Compiled for sm_80 from kernels/doorbell.cu; the build asserts the
+        /* Compiled for sm_80 from kernels/store_dword.cu; the build asserts the
          * generated SASS still contains its system-scope store. */
-        .doorbell = { mc_doorbell_kernel_sass,
-                      MC_DOORBELL_SASS_LEN,
-                      MC_DOORBELL_REGS },
+        .store_dword = { mc_store_dword_kernel_sass,
+                      MC_STORE_DWORD_SASS_LEN,
+                      MC_STORE_DWORD_REGS },
         /* No sm_owner cubin: that kernel authors a submission and rings the
          * BAR1 doorbell, which this architecture has no aperture for.  The
          * feature engine withholds MC_FEAT_XFER_SM from cap.usermode_bar1_capable

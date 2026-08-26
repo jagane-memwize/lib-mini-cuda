@@ -212,8 +212,14 @@ typedef struct {
 } mc_kernel_blob_t;
 
 typedef struct {
-    mc_kernel_blob_t sm_owner;   /* SM authors an entire CE submission */
-    mc_kernel_blob_t doorbell;   /* one thread, one system-scope store  */
+    mc_kernel_blob_t sm_owner;     /* SM authors an entire CE submission   */
+    /* One thread, one system-scope store to a given address.  Named for what
+     * it does rather than for one use of it: pointed at a BAR1 doorbell it
+     * rings one, pointed at ordinary memory it is the minimal proof that a
+     * kernel launches at all.  Only the second use is available on an
+     * architecture without a BAR1 usermode aperture, which is why Ampere and
+     * Ada carry this blob and no sm_owner blob. */
+    mc_kernel_blob_t store_dword;
 } mc_arch_kernels_t;
 
 /* ── Compute (QMD) ────────────────────────────────────────────────────────

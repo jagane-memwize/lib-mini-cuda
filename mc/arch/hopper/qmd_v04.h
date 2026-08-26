@@ -22,8 +22,8 @@
  *
  *   uint8_t *qmd  = vidmem_alloc(MC_QMD_BYTES, 0x100);
  *   uint8_t *cb0  = vidmem_alloc(mc_cb0_alloc_bytes(compute), 0x100);
- *   uint8_t *sass = vidmem_alloc(roundup(MC_DOORBELL_SASS_LEN, 256), 0x100);
- *   memcpy(sass, mc_doorbell_kernel_sass, MC_DOORBELL_SASS_LEN);
+ *   uint8_t *sass = vidmem_alloc(roundup(MC_STORE_DWORD_SASS_LEN, 256), 0x100);
+ *   memcpy(sass, mc_store_dword_kernel_sass, MC_STORE_DWORD_SASS_LEN);
  *
  *   mc_qmd_init(qmd);
  *   mc_qmd_set_global_size(qmd, 1, 1, 1);
@@ -70,8 +70,8 @@
  * global memdesc at 0x208 which must stay zero for raw-VA mode -- and they do
  * NOT carry to other SM versions.  See hal/arch.h. */
 
-/* The mc_doorbell_kernel SASS now lives in the generated
- * arch/hopper/doorbell_sass.h, built from kernels/doorbell.cu.
+/* The mc_store_dword_kernel SASS now lives in the generated
+ * arch/hopper/store_dword_sass.h, built from kernels/store_dword.cu.
  * Include that header directly where the bytes are needed. */
 
 #endif /* MC_COMPUTE_QMD_H */

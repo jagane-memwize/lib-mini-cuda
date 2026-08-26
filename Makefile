@@ -309,7 +309,7 @@ bin/%: tests/mc/%.c $(MC_HELPERS) $(LIBMC) | bin
 # A future toolkit may lower differently.  Re-measure rather than assume, and
 # update this table with what you saw.
 
-KERNELS := sm_owner doorbell
+KERNELS := sm_owner store_dword
 
 # sm_owner: -O2 so nvcc folds the DRF-derived constants into immediates.
 KERNEL_OPT_sm_owner     := -O2
@@ -322,12 +322,12 @@ KERNEL_ASSERTS_sm_owner := 'STG\.E(\.[0-9]+)?\.STRONG\.SYS:19' \
                            'LDG\.E(\.[0-9]+)?\.STRONG\.GPU:1' \
                            'MEMBAR\.SC\.SYS:1'
 
-# doorbell: -O0.  Nothing to fold, and it keeps the SASS a literal
+# store_dword: -O0.  Nothing to fold, and it keeps the SASS a literal
 # transcription of the source, which is what makes the bytes reviewable.
-KERNEL_OPT_doorbell     := -O0
-# The single store must reach system scope, or it sits in L1 and the doorbell
-# is never rung.
-KERNEL_ASSERTS_doorbell := 'STG\.E(\.[0-9]+)?\.STRONG\.SYS:1'
+KERNEL_OPT_store_dword     := -O0
+# The single store must reach system scope, or it sits in L1: a doorbell would
+# never be rung, and a store to host-visible memory would never be observed.
+KERNEL_ASSERTS_store_dword := 'STG\.E(\.[0-9]+)?\.STRONG\.SYS:1'
 
 NVCC_KERNEL_BASE ?= --cubin -lineinfo -Imc
 

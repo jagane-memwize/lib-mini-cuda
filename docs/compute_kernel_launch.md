@@ -147,7 +147,7 @@ One arch assumption still lives here: `experimental/sm_owner.c`'s `patch_cb0`
 hardcodes `0x210` for the kernel's parameter slot. That is correct for sm_90
 and unreachable elsewhere, since this path needs the BAR1 aperture — but a
 BAR1-capable non-Hopper backend will need those offsets moved into the compute
-ops beside the doorbell kernel's.
+ops beside the store-dword kernel's.
 
 ## Diagnostic evidence
 
@@ -219,7 +219,8 @@ changing the QMD or ordering rules.
 - `mc/experimental/compute.c` — compute-channel setup and host-authored launch.
 - `mc/experimental/sm_owner.c` — host glue for the SM-authored CE path.
 - `mc/kernels/sm_owner.cu` — GPU-side command publication.
-- `mc/kernels/doorbell.cu` — the minimal one-store kernel.
+- `mc/kernels/store_dword.cu` — the minimal one-store kernel; the payload
+  behind both the doorbell experiment and every compute-launch proof.
 - `tests/unit/mc_qmd_test.c` — golden QMD bits for both versions, no GPU needed.
 - `tests/mc/mc_compute_dbell_demo.c` — scratch-write proof.
 - `tests/mc/mc_compute_dbell_chain_demo.c` — SM-to-doorbell chain.

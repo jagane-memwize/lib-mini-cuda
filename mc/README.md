@@ -423,12 +423,16 @@ than a single umbrella:
   `mc_memcpy(..., MC_XFER_SM)`.  Wraps the embedded sm_owner kernel
   in a launch-and-poll path against the compute channel.
 
-**Embedded sm_owner kernel:**
+**Embedded kernels:**
 
-- `kernels/doorbell.cu` — one thread, one system-scope store: the minimal
-  demonstration that an SM store can ring a BAR1 doorbell and wake PBDMA.
-  `volatile` is load-bearing — it is what makes the store lower to
-  `STG.E.STRONG.SYS` rather than sitting in L1.
+- `kernels/store_dword.cu` — one thread, one system-scope store to whatever
+  address it is given.  Named for what it does, not for one use of it: pointed
+  at a BAR1 doorbell it demonstrates an SM store can ring one and wake PBDMA
+  (Hopper-only, since that aperture is); pointed at ordinary memory it is the
+  minimal proof that a kernel launches at all, which is what makes
+  `MC_FEAT_COMPUTE_LAUNCH` meaningful and why Ampere and Ada carry this cubin
+  despite having no doorbell to ring.  `volatile` is load-bearing — it is what
+  makes the store lower to `STG.E.STRONG.SYS` rather than sitting in L1.
 - `kernels/sm_owner.cu` — single-thread kernel that authors an
   entire CE-channel submission from one SM thread.  Compiled only for
   architectures that can ring a doorbell, so Hopper today.  Uses `st.relaxed.sys.global`

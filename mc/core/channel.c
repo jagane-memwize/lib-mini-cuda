@@ -526,8 +526,8 @@ int mc_compute_channel_init(mc_ctx_t *ctx, mc_vas_t slot)
    * kind — only the channel-core PB/GPFIFO/USERD/sema follow the
    * carrier's aperture rule). */
   if (mc_compute_module_init(ctx, slot, &ex->module,
-                             ctx->arch->kernels.doorbell.bytes,
-                             ctx->arch->kernels.doorbell.len) != 0)
+                             ctx->arch->kernels.store_dword.bytes,
+                             ctx->arch->kernels.store_dword.len) != 0)
     return -1;
 
   if (mc_compute_module_init(ctx, slot, &ex->sm_owner_module,
