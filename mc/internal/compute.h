@@ -47,4 +47,19 @@
 mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
                                uint64_t dst_gpu_va, uint32_t size_bytes);
 
+/* ── Constant buffer 0 ────────────────────────────────────────────────────
+ *
+ * Both embedded kernels take the same two arguments -- a destination VA and a
+ * token -- so CB0 is zero-filled and only those argument dwords are written.
+ * Where they go is per-architecture and comes from the compiled SASS; see the
+ * cb0_* fields in mc_compute_ops_t.
+ *
+ * Shared rather than per-backend on purpose: the offsets differ but the
+ * procedure does not, and duplicating a memset plus three stores per
+ * architecture would be four copies of the same code differing only in
+ * constants the descriptor already carries. */
+void mc_cb0_init(const mc_compute_ops_t *c, uint8_t *cb0);
+void mc_cb0_set_args(const mc_compute_ops_t *c, uint8_t *cb0,
+                     uint64_t dst_gpu_va, uint32_t token);
+
 #endif /* MC_INTERNAL_COMPUTE_H */

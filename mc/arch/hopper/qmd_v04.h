@@ -21,7 +21,7 @@
  * Usage (single-thread (1,1,1) grid running our doorbell-write SASS):
  *
  *   uint8_t *qmd  = vidmem_alloc(MC_QMD_BYTES, 0x100);
- *   uint8_t *cb0  = vidmem_alloc(MC_CB0_TOTAL_BYTES_ALIGNED, 0x100);
+ *   uint8_t *cb0  = vidmem_alloc(mc_cb0_alloc_bytes(compute), 0x100);
  *   uint8_t *sass = vidmem_alloc(roundup(MC_DOORBELL_SASS_LEN, 256), 0x100);
  *   memcpy(sass, mc_doorbell_kernel_sass, MC_DOORBELL_SASS_LEN);
  *
@@ -33,7 +33,7 @@
  *   mc_qmd_set_barrier_count (qmd, 0);
  *   mc_qmd_set_slm_size      (qmd, 0);
  *   mc_qmd_set_smem_size     (qmd, 0);
- *   mc_qmd_set_cbuf(qmd, 0, cb0_gpu_va, MC_CB0_TOTAL_BYTES_ALIGNED);
+ *   mc_qmd_set_cbuf(qmd, 0, cb0_gpu_va, mc_cb0_alloc_bytes(compute));
  *
  *   mc_cb0_init(cb0);
  *   mc_cb0_set_args(cb0, dst_gpu_va, token);
@@ -59,25 +59,16 @@
  * so any bytes past 0x21c are unread but the buffer must be at
  * least 0x21c bytes.  We round up to 0x100 = 256 (NVK's
  * min_cbuf_alignment for Hopper is 0x100 on this class). */
-#define MC_CB0_TOTAL_BYTES           0x21Cu
-#define MC_CB0_TOTAL_BYTES_ALIGNED   ((MC_CB0_TOTAL_BYTES + 0xFFu) & ~0xFFu)
-
-/* User-arg offsets inside CB0 (the SASS reads via LDC.64 / LDC). */
-#define MC_CB0_OFF_USER_DST_LO       0x210u
-#define MC_CB0_OFF_USER_DST_HI       0x214u
-#define MC_CB0_OFF_USER_TOKEN        0x218u
-
 /* The QMD field setters are private to qmd_v04.c: they are how a V04 QMD
  * is assembled, not what a caller asks for.  Callers go through the
  * architecture's compute ops (hal/arch.h), whose build_qmd covers the one
  * launch shape libmc uses.  mc_arch_hopper_compute is that table. */
 
-/* CB0 builders.  CB0 is zero-init'd and only the three argument
- * dwords (c[0x0][0x210/0x214/0x218]) are written — the SASS reads
- * the global memdesc base from c[0x0][0x208] (must be 0 for raw-VA
- * mode) and the dst pointer + token from the arg dwords. */
-void mc_cb0_init(uint8_t *cb0);
-void mc_cb0_set_args(uint8_t *cb0, uint64_t dst_gpu_va, uint32_t token);
+/* CB0 is built by the shared hal/cbuf.c (declared in internal/compute.h),
+ * parameterised by the cb0_* offsets in mc_arch_hopper_compute.  Those
+ * offsets are sm_90's -- 0x210/0x214/0x218 for the arguments, with the
+ * global memdesc at 0x208 which must stay zero for raw-VA mode -- and they do
+ * NOT carry to other SM versions.  See hal/arch.h. */
 
 /* The mc_doorbell_kernel SASS now lives in the generated
  * arch/hopper/doorbell_sass.h, built from kernels/doorbell.cu.

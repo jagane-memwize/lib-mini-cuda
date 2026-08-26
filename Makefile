@@ -110,7 +110,7 @@ MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
                 mc/core/feature.c \
                 mc/core/memcpy.c mc/core/vaspace.c
 MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c mc/hal/registry.c \
-                mc/hal/detect.c
+                mc/hal/detect.c mc/hal/cbuf.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
 MC_ARCH_SRCS := $(foreach a,$(MC_ARCHS),$(wildcard mc/arch/$(a)/*.c))
 # One -D per enabled architecture, so hal/registry.c can compile in exactly
@@ -182,6 +182,9 @@ UNIT_WRAP_mc_arch_desc_test     := none
 UNIT_SRCS_mc_arch_desc_test     := $(ALL_BACKEND_SRCS) mc/hal/registry.c
 UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
                                    $(ALL_BACKEND_SRCS)
+UNIT_WRAP_mc_qmd_test           := none
+UNIT_SRCS_mc_qmd_test           := mc/arch/ampere/qmd_v03.c \
+                                   mc/arch/hopper/qmd_v04.c
 UNIT_WRAP_mc_userd_addr_test    := none
 UNIT_SRCS_mc_userd_addr_test    := $(ALL_BACKEND_SRCS) mc/hal/registry.c
 

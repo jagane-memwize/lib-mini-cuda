@@ -375,12 +375,12 @@ mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
   /* Patch the QMD: NVK-style from zero.  Same field set as
    * mc_compute_doorbell_kernel — only PROGRAM_ADDRESS and
    * REGISTER_COUNT differ from the embedded-doorbell module.
-   * CB0 binding uses MC_CB0_TOTAL_BYTES_ALIGNED for size. */
+   * CB0 binding size comes from the arch's compute ops. */
   compute_ch->arch->compute->build_qmd(mod->qmd_cpu,
                                        mod->sass_gpu_va,
                                        compute_ch->arch->kernels.sm_owner.regs,
                                        mod->cb0_gpu_va,
-                                       MC_CB0_TOTAL_BYTES_ALIGNED);
+                                       mc_cb0_alloc_bytes(compute_ch->arch->compute));
 
   /* Patch CB0 with the per-call argument tuple.  The kernel reads
    * one u64 (the args-struct GPU VA) at CB0[0x210], then dereferences

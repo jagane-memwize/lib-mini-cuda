@@ -225,23 +225,9 @@ static void mc_qmd_set_cbuf(uint8_t *qmd, uint8_t idx, uint64_t addr, uint32_t s
     qmd_set_bits(qmd, CB_VALID_BIT(idx),  CB_VALID_BIT(idx),  1);
 }
 
-/* ── CB0 ──────────────────────────────────────────────────────────── */
-
-void mc_cb0_init(uint8_t *cb0)
-{
-    /* No libcuda VA fragments, no signature dwords — just zero.  The
-     * SASS reads c[0x0][0x208] (global memdesc, must be 0),
-     * c[0x0][0x210/0x214] (dst), c[0x0][0x218] (token).  All other
-     * bytes are unread. */
-    memset(cb0, 0, MC_CB0_TOTAL_BYTES_ALIGNED);
-}
-
-void mc_cb0_set_args(uint8_t *cb0, uint64_t dst_gpu_va, uint32_t token)
-{
-    *(uint32_t *)(cb0 + MC_CB0_OFF_USER_DST_LO) = (uint32_t)dst_gpu_va;
-    *(uint32_t *)(cb0 + MC_CB0_OFF_USER_DST_HI) = (uint32_t)(dst_gpu_va >> 32);
-    *(uint32_t *)(cb0 + MC_CB0_OFF_USER_TOKEN ) = token;
-}
+/* CB0 is built by the shared hal/cbuf.c, parameterised by the cb0_* offsets
+ * in the ops table below -- the procedure is identical across architectures,
+ * only the offsets differ, and those are already descriptor data. */
 
 /* ── SASS bytes for mc_doorbell_kernel ────────────────────────────────
  * Compiled offline via:
@@ -302,5 +288,11 @@ const mc_compute_ops_t mc_arch_hopper_compute = {
     .cbuf_align    = 0x100,      /* NVK's min_cbuf_alignment for this class */
     .version_major = 4,
     .version_minor = 0,
+    /* From `cuobjdump --dump-sass` of the sm_90 cubin: LDC.64 R2,
+     * c[0x0][0x210] and LDC R5, c[0x0][0x218].  CONSTANT[0] is 540 bytes. */
+    .cb0_bytes      = 0x21Cu,
+    .cb0_off_dst_lo = 0x210u,
+    .cb0_off_dst_hi = 0x214u,
+    .cb0_off_token  = 0x218u,
     .build_qmd     = hopper_build_qmd,
 };

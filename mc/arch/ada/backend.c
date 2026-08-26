@@ -37,15 +37,13 @@
  *     limit measured on the A100 applies here too.  See the field comment in
  *     hal/arch.h and tests/unit/mc_userd_addr_test.c.
  *
- * Compute is absent, as on Ampere.  ADA_COMPUTE_A is listed in .cls so
- * detection verifies it against the device class list, but no QMD builder
- * exists: Ada uses the same V03 layout family as Ampere, which has to be
- * transcribed from Mesa NVK rather than written from memory.  Until then
- * .compute stays NULL and the feature engine withholds every compute-dependent
- * feature.  One V03 builder will serve both architectures.
+ * Compute uses Ampere's QMD V03 builder (arch/ampere/qmd_v03.c): Ada brings
+ * its own compute CLASS but not its own QMD layout.  Its cubins are its own,
+ * compiled for sm_89.
  *
- * That leaves host transfers on the UVM and sysmem-carrier VA spaces, which is
- * the same reduced set Ampere delivers.
+ * Nothing doorbell-driven comes back with it -- compute_launch means a kernel
+ * runs and its stores land; MC_FEAT_CE_DOORBELL_RING and MC_FEAT_XFER_SM still
+ * need the BAR1 aperture Ada does not have.
  */
 
 #include "class/cl50a0.h"        /* NV50_MEMORY_VIRTUAL */
@@ -60,8 +58,15 @@
 #include "hal/arch.h"
 #include "internal/types.h"
 
+#include "doorbell_sass.h"
+
 /* Shared with Ampere by class identity -- see the file comment. */
 extern const mc_arch_ops_t mc_arch_ampere_ops;
+/* Shared with Ampere because Ada uses the same QMD V03 layout, and because
+ * the sm_89 cubin turns out to place its kernel arguments exactly where the
+ * sm_80 one does (dst 0x160/0x164, token 0x168, REG 8) -- verified with
+ * cuobjdump rather than assumed.  The cubin bytes below are still Ada's own. */
+extern const mc_compute_ops_t mc_arch_ampere_compute;
 
 const mc_arch_desc_t mc_arch_ada = {
     .name   = "ada",
@@ -114,7 +119,13 @@ const mc_arch_desc_t mc_arch_ada = {
     },
 
     .ops     = &mc_arch_ampere_ops,
-    /* No QMD V03 builder yet -- see the file comment. */
-    .compute = NULL,
-    /* No cubins: only useful with compute support, which is absent. */
+    .compute = &mc_arch_ampere_compute,
+
+    .kernels = {
+        /* Compiled for sm_89 from kernels/doorbell.cu. */
+        .doorbell = { mc_doorbell_kernel_sass,
+                      MC_DOORBELL_SASS_LEN,
+                      MC_DOORBELL_REGS },
+        /* No sm_owner cubin: no BAR1 aperture, so nothing to ring. */
+    },
 };

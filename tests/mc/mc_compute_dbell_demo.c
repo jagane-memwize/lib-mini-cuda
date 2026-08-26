@@ -121,9 +121,15 @@ int main(void)
 
   int ok = (observed == token);
   if (ok)
+    /* Deliberately does not name a class.  This demo used to say
+     * HOPPER_COMPUTE_A, which stopped being true once Ampere and Ada gained
+     * compute -- they run the same kernel under AMPERE_COMPUTE_A and
+     * ADA_COMPUTE_A, with a QMD V03 rather than V04.  libmc exposes no
+     * architecture accessor and one is not worth adding for a message, so
+     * the message simply stops claiming something it cannot check. */
     printf("PASS: GPU SM thread wrote 0x%08x to host-visible scratch via\n"
-           "      mc_doorbell_kernel(dst, token) executed under\n"
-           "      HOPPER_COMPUTE_A on mc's compute channel.\n",
+           "      mc_doorbell_kernel(dst, token) executed on mc's compute\n"
+           "      channel, under this GPU's compute class.\n",
            token);
   else if (observed == SENTINEL)
     fprintf(stderr,

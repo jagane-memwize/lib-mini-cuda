@@ -241,12 +241,41 @@ typedef struct {
     uint8_t  version_major;
     uint8_t  version_minor;
 
+    /* Constant-bank-0 layout for the embedded kernels.
+     *
+     * These are data, not behaviour, so they sit here rather than behind a
+     * hook -- but note they are NOT properties of the QMD version.  nvcc
+     * places kernel parameters at a different constant-bank offset per SM
+     * version, so they are properties of the compiled SASS:
+     *
+     *     sm_90   dst 0x210/0x214   token 0x218   (CONSTANT[0] 540 bytes)
+     *     sm_80   dst 0x160/0x164   token 0x168   (CONSTANT[0] 364 bytes)
+     *
+     * They live in this table because a backend already selects both its QMD
+     * version and its cubins together, and the two must agree.  Read them off
+     * `cuobjdump --dump-sass` for the arch's cubin -- never assume another
+     * architecture's offsets carry over.
+     *
+     * cb0_bytes is what the kernel actually reads; callers round it up to
+     * cbuf_align before allocating and binding. */
+    uint32_t cb0_bytes;
+    uint32_t cb0_off_dst_lo;
+    uint32_t cb0_off_dst_hi;
+    uint32_t cb0_off_token;
+
     /* Build a complete QMD for a single-CTA, single-thread launch.
      * `qmd` must be qmd_bytes long and qmd_align-aligned. */
     void (*build_qmd)(uint8_t *qmd,
                       uint64_t prog_gpu_va, uint32_t register_count,
                       uint64_t cb0_gpu_va,  uint32_t cb0_bytes);
 } mc_compute_ops_t;
+
+/* Bytes to allocate for a constant buffer 0: what the kernel reads, rounded
+ * up to the alignment the class requires for a bound cbuf. */
+static inline uint32_t mc_cb0_alloc_bytes(const mc_compute_ops_t *c)
+{
+    return (c->cb0_bytes + c->cbuf_align - 1u) & ~(c->cbuf_align - 1u);
+}
 
 /* The descriptor proper. */
 struct mc_arch_desc {

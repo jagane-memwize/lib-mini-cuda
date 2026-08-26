@@ -17,16 +17,17 @@
  * The feature engine derives all of that from cap.usermode_bar1_capable
  * below; nothing here lists features.
  *
- * Compute is deliberately absent for now.  GA100 uses QMD V03, a different
- * bit layout from Hopper's V04 -- not a field shuffle -- and the pinned tree
- * ships no QMD header beyond Kepler's, so V03 positions would have to be
- * transcribed from Mesa NVK exactly as V04's were.  Writing them without that
- * reference in front of us would put unverified bit positions into a
- * structure SKED dereferences, whose failure mode is an Xid rather than an
- * error return.  Until a V03 builder is written against NVK and checked on
- * this hardware, .compute stays NULL and the compute-dependent features are
- * simply unavailable -- which the feature engine already handles and
- * tests/unit/mc_feature_test.c already covers.
+ * Compute uses QMD V03, built against Mesa NVK's Qmd3_0 -- see
+ * arch/ampere/qmd_v03.c.  V03 is a different layout from Hopper's V04 rather
+ * than a field shuffle: a different size, different bit positions throughout,
+ * an extra SM_GLOBAL_CACHING_ENABLE, unshifted constant-buffer addresses, and
+ * no QMD_TYPE field at all.  The sm_80 cubin's constant-bank offsets differ
+ * from sm_90's too, and travel with the compute ops.
+ *
+ * Note this does NOT bring back anything doorbell-driven.  compute_launch
+ * means a kernel can be launched and its stores land; MC_FEAT_CE_DOORBELL_RING
+ * and MC_FEAT_XFER_SM still depend on the BAR1 aperture above and remain
+ * unavailable here.
  *
  * Everything below is established from the pinned headers; see the header
  * name against each field.
@@ -64,7 +65,10 @@
 #include "hal/arch.h"
 #include "internal/types.h"
 
+#include "doorbell_sass.h"
+
 extern const mc_arch_ops_t mc_arch_ampere_ops;
+extern const mc_compute_ops_t mc_arch_ampere_compute;
 
 const mc_arch_desc_t mc_arch_ampere = {
     .name   = "ampere",
@@ -127,8 +131,17 @@ const mc_arch_desc_t mc_arch_ampere = {
     },
 
     .ops     = &mc_arch_ampere_ops,
-    /* No QMD V03 builder yet -- see the file comment. */
-    .compute = NULL,
-    /* No cubins: SASS is per-SM-version and these are only useful with
-     * compute support, which is absent. */
+    .compute = &mc_arch_ampere_compute,
+
+    .kernels = {
+        /* Compiled for sm_80 from kernels/doorbell.cu; the build asserts the
+         * generated SASS still contains its system-scope store. */
+        .doorbell = { mc_doorbell_kernel_sass,
+                      MC_DOORBELL_SASS_LEN,
+                      MC_DOORBELL_REGS },
+        /* No sm_owner cubin: that kernel authors a submission and rings the
+         * BAR1 doorbell, which this architecture has no aperture for.  The
+         * feature engine withholds MC_FEAT_XFER_SM from cap.usermode_bar1_capable
+         * regardless, so the blob would be dead weight. */
+    },
 };

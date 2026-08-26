@@ -73,12 +73,14 @@ mc_status_t mc_compute_doorbell_kernel(mc_ctx_t *ctx, uint64_t dst_gpu_va,
    * binds the kernel argument tuple. */
   ch->arch->compute->build_qmd(mod->qmd_cpu,
                                mod->sass_gpu_va, /*register_count=*/8,
-                               mod->cb0_gpu_va, MC_CB0_TOTAL_BYTES_ALIGNED);
+                               mod->cb0_gpu_va,
+                               mc_cb0_alloc_bytes(ch->arch->compute));
 
-  /* CB0: zero-init, then write only the kernel-argument dwords the
-   * SASS actually reads (c[0x0][0x210..0x218]). */
-  mc_cb0_init(mod->cb0_cpu);
-  mc_cb0_set_args(mod->cb0_cpu, dst_gpu_va, token);
+  /* CB0: zero-init, then write only the kernel-argument dwords the SASS
+   * actually reads.  Where those sit is per-architecture (sm_90 puts them
+   * at 0x210, sm_80 at 0x160), so the offsets come from the compute ops. */
+  mc_cb0_init(ch->arch->compute, mod->cb0_cpu);
+  mc_cb0_set_args(ch->arch->compute, mod->cb0_cpu, dst_gpu_va, token);
 
   if (mc_debug())
   {

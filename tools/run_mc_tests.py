@@ -184,7 +184,10 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
     param_requires: dict[str, tuple[str, ...]] = {
         "mc_demo":                     (),
         "mc_sm_owner_demo":            ("xfer_sm",),
-        "mc_compute_dbell_chain_demo": ("compute_launch", "ce_doorbell_ring"),
+        # Calls mc_memcpy_gpu_doorbell_sm -- the SM-authored path, whose
+        # feature already implies compute_launch and ce_doorbell_ring
+        # through the dependency closure.
+        "mc_compute_dbell_chain_demo": ("xfer_sm",),
         "mc_dbell_chain_demo":         ("ce_doorbell_ring",),
     }
     for binary, needs in param_requires.items():
@@ -208,7 +211,9 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
     # sysmem-carrier coverage that Ampere and Ada can perfectly well run.
     oneshot_requires: dict[str, tuple[str, ...]] = {
         "mc_allocation_test":    (),
-        "mc_compute_dbell_demo": ("compute_launch", "ce_doorbell_ring"),
+        # Only launches a kernel that writes to scratch, despite the name:
+        # it needs compute, not a doorbell.  It passes on Ampere and Ada.
+        "mc_compute_dbell_demo": ("compute_launch",),
         "mc_dbell_demo":         ("ce_doorbell_ring",),
         "mc_features_demo":      (),
     }
