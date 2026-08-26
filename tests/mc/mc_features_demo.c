@@ -20,6 +20,16 @@
  * path are permanently unavailable there.  A caller has to be able to ask,
  * and asking has to work.
  *
+ * `--porcelain` skips the checks and prints one machine-readable line:
+ *
+ *     features: xfer_host host_register carrier_sysmem
+ *
+ * tools/run_mc_tests.py uses that to decide which matrix cells this GPU can
+ * run at all, so the format is a contract rather than a convenience: one
+ * line, the literal prefix "features:", then zero or more mc_feature_name()
+ * values separated by single spaces.  Printing the names rather than a mask
+ * keeps it readable and means the harness never has to track bit positions.
+ *
  * Exit codes: 0 PASS, 1 verification failed, 3 init failed.
  */
 #include <mc/mc.h>
@@ -77,12 +87,36 @@ static void check_copy_works(mc_ctx_t *ctx, const char *what)
     mc_free(ctx, h);
 }
 
-int main(void)
+/* Machine-readable capability report -- see the file comment for the format
+ * contract.  Deliberately does no verification: a harness asking "what can
+ * this GPU do?" must not fail for a reason unrelated to the question. */
+static int print_porcelain(void)
+{
+    mc_ctx_t *ctx = NULL;
+    int       f;
+
+    if (mc_init(&ctx) != MC_OK) {
+        printf("mc_init failed\n");
+        return 3;
+    }
+    printf("features:");
+    for (f = 0; f < MC_FEAT_COUNT; f++)
+        if (mc_feature_supported(ctx, (mc_feature_t)f))
+            printf(" %s", mc_feature_name((mc_feature_t)f));
+    printf("\n");
+    mc_fini(ctx);
+    return 0;
+}
+
+int main(int argc, char **argv)
 {
     mc_ctx_t        *ctx = NULL;
     mc_init_params_t basic = { .features = MC_FEATURES_BASIC };
     uint64_t         full_mask = 0;
     int              f;
+
+    if (argc > 1 && strcmp(argv[1], "--porcelain") == 0)
+        return print_porcelain();
 
     /* ── Full initialisation: whatever this GPU can do ──────────────── */
     if (mc_init(&ctx) != MC_OK) {

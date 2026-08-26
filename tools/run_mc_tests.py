@@ -63,10 +63,61 @@ class Cell:
     # actually did what we expected (some demos print PASS even when
     # internal verifies skipped).  Default: just check exit==0.
     extra_check: Callable[[str], bool] | None = None
+    # mc_feature_name() values this cell needs.  A GPU that lacks any of
+    # them cannot run the cell at all, and the cell is skipped rather than
+    # run and counted as a failure -- see `requires` handling in main().
+    # Empty means "works on anything libmc supports".
+    requires: tuple[str, ...] = ()
 
     @property
     def label(self) -> str:
         return f"{self.binary} {' '.join(self.args)}".rstrip()
+
+
+# ─── capability query ─────────────────────────────────────────────────────────
+#
+# Not every supported architecture can do everything libmc implements.  Ampere
+# and Ada have no BAR1 usermode aperture, so they have no doorbell PTE, and
+# therefore no FB carrier and nothing SM-authored -- roughly a third of this
+# matrix is unrunnable there as a property of the silicon.
+#
+# Before this existed the harness ran those cells anyway and reported them as
+# failures, so a perfectly correct Ampere run looked like 27 regressions.  Ask
+# the library what the GPU can do and skip the rest.
+
+_RE_FEATURES = re.compile(r"^features:(.*)$", re.MULTILINE)
+
+
+def query_features(bin_dir: Path, verbose: bool) -> set[str] | None:
+    """Ask mc_features_demo --porcelain what this GPU offers.
+
+    Returns None if the query could not be run, which is deliberately
+    different from an empty set: "we do not know" must not silently skip the
+    whole matrix.  Callers treat None as "run everything", so a broken query
+    degrades to the old behaviour rather than to a vacuous green run.
+    """
+    exe = bin_dir / "mc_features_demo"
+    if not exe.exists():
+        return None
+    try:
+        proc = subprocess.run([str(exe), "--porcelain"],
+                              capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"warning: feature query failed to run ({exc}); "
+              f"running every cell", file=sys.stderr)
+        return None
+    if proc.returncode != 0:
+        print(f"warning: feature query exited {proc.returncode}; "
+              f"running every cell", file=sys.stderr)
+        if verbose:
+            print(proc.stdout + proc.stderr, file=sys.stderr)
+        return None
+    m = _RE_FEATURES.search(proc.stdout)
+    if m is None:
+        print("warning: feature query printed no 'features:' line; "
+              "running every cell", file=sys.stderr)
+        return None
+    return set(m.group(1).split())
 
 
 def _expect_pass_keyword(out: str) -> bool:
@@ -95,7 +146,20 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
     iters_default = "4"
 
     # ── parameterised carrier demo: mc_carrier_demo (the broadest one) ──
-    # 4-way matrix: (carrier × direction).
+    # 4-way matrix: (carrier × direction).  Each arm names its own carrier VA
+    # space, and the FB one needs a BAR1 usermode aperture to exist.
+    #
+    # Both arms also need xfer_sm.  The demo's subject IS the SM-authored
+    # submission path -- its MC_XFER_HOST calls only seed and verify -- so
+    # without xfer_sm there is nothing left of it to run.  That means neither
+    # arm runs on Ampere or Ada, and no cell in this matrix currently moves
+    # data over a carrier VA space on those architectures even though they
+    # bring one up successfully.  Closing that needs a host-authored carrier
+    # transfer demo, which does not exist yet.
+    carrier_feature = {
+        "--sysmem": ("carrier_sysmem", "xfer_sm"),
+        "--fb":     ("carrier_fb",     "xfer_sm"),
+    }
     for carrier_flag in ["--sysmem", "--fb"]:
         for direction in ["", "--h2d"]:
             for size in sizes:
@@ -106,17 +170,24 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
                     binary="mc_carrier_demo",
                     args=args,
                     extra_check=_expect_pass_keyword,
+                    requires=carrier_feature[carrier_flag],
                 ))
 
     # ── parameterised host-side demos: mc_demo, mc_sm_owner_demo,
     #    mc_compute_dbell_chain_demo, mc_dbell_chain_demo ──
     # 2-way matrix: direction.
-    for binary in [
-        "mc_demo",
-        "mc_sm_owner_demo",
-        "mc_compute_dbell_chain_demo",
-        "mc_dbell_chain_demo",
-    ]:
+    #
+    # mc_demo is the only one with no requirement: a host-authored CE copy is
+    # the one thing every supported GPU provides.  The rest need the GPU to
+    # ring its own doorbell, to launch a kernel, or both -- all of which need
+    # the BAR1 usermode aperture that Ampere and Ada do not have.
+    param_requires: dict[str, tuple[str, ...]] = {
+        "mc_demo":                     (),
+        "mc_sm_owner_demo":            ("xfer_sm",),
+        "mc_compute_dbell_chain_demo": ("compute_launch", "ce_doorbell_ring"),
+        "mc_dbell_chain_demo":         ("ce_doorbell_ring",),
+    }
+    for binary, needs in param_requires.items():
         for direction in ["", "--h2d"]:
             for size in sizes:
                 args = ["--size", size, "--iters", iters_default]
@@ -126,15 +197,27 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
                     binary=binary,
                     args=args,
                     extra_check=_expect_pass_keyword,
+                    requires=needs,
                 ))
 
     # ── one-shot tests: just exercise that they still link/run ──
-    for binary in ["mc_allocation_test", "mc_compute_dbell_demo", "mc_dbell_demo",
-                   "mc_features_demo"]:
+    #
+    # mc_allocation_test is deliberately unconditional.  It sweeps VA-space
+    # pairs, only some of which involve the FB carrier, and it skips those
+    # itself; gating the whole binary on carrier_fb would drop the UVM and
+    # sysmem-carrier coverage that Ampere and Ada can perfectly well run.
+    oneshot_requires: dict[str, tuple[str, ...]] = {
+        "mc_allocation_test":    (),
+        "mc_compute_dbell_demo": ("compute_launch", "ce_doorbell_ring"),
+        "mc_dbell_demo":         ("ce_doorbell_ring",),
+        "mc_features_demo":      (),
+    }
+    for binary, needs in oneshot_requires.items():
         cells.append(Cell(
             binary=binary,
             args=[],
             extra_check=_expect_no_fail_keyword,
+            requires=needs,
         ))
 
     # ── stress: cross the 512-entry GPFIFO wrap ──
@@ -151,6 +234,7 @@ def build_matrix(quick: bool, stress: bool) -> list[Cell]:
                     args=args,
                     timeout_s=120.0,
                     extra_check=_expect_pass_keyword,
+                    requires=carrier_feature[carrier_flag],
                 ))
 
     return cells
@@ -168,6 +252,10 @@ class Result:
     stderr: str
     bandwidth_gbps: float | None = None
     note: str = ""
+    # Set when the cell was skipped without being run, because the GPU does
+    # not offer a feature it declared in Cell.requires.  Names the missing
+    # feature so the report says why, not just that.
+    skip_reason: str = ""
 
     @property
     def skipped(self) -> bool:
@@ -179,7 +267,23 @@ class Result:
         capability as absent has not failed -- there is nothing there to
         test -- and counting it as a failure would make a correct Ampere run
         look broken.
+
+        Two ways to land here.  `skip_reason` is the deliberate one: the cell
+        declared a required feature the GPU does not have and was never run.
+        The output heuristic below is the fallback, for a demo that discovers
+        mid-run that something is unavailable and says so -- it predates the
+        declared requirements and still covers cases too fine-grained to
+        express per-cell.
+
+        The heuristic is all-or-nothing, and that is a trap worth knowing
+        about: it marks the WHOLE cell skipped on a substring match anywhere
+        in the output.  A test that skips only part of its own work and still
+        does real testing must therefore avoid these phrases, or its genuine
+        coverage is silently discounted.  mc_allocation_test is exactly that
+        case and words its per-pair skip line to dodge them.
         """
+        if self.skip_reason:
+            return True
         out = (self.stdout + self.stderr).lower()
         return ("unsupported" in out or "unavailable on this gpu" in out)
 
@@ -250,9 +354,13 @@ def run_cell(cell: Cell, bin_dir: Path, verbose: bool) -> Result:
 
 
 def fmt_result(r: Result) -> str:
-    status = "PASS" if r.ok else "FAIL"
+    # A skipped cell is not a pass: reporting it as one hides how much of the
+    # matrix a given GPU actually exercised, which is the number that matters
+    # when comparing an Ampere run against a Hopper one.
+    status = "SKIP" if r.skipped else ("PASS" if r.ok else "FAIL")
     bw = f" {r.bandwidth_gbps:5.2f} GB/s" if r.bandwidth_gbps is not None else ""
-    note = f" [{r.note}]" if r.note else ""
+    note = r.note or r.skip_reason
+    note = f" [{note}]" if note else ""
     return f"  [{status}] {r.duration_s:6.2f}s{bw}{note:>10}  {r.cell.label}"
 
 
@@ -306,16 +414,29 @@ def main(argv: list[str]) -> int:
             print(f"no tests matched --filter {args.filter!r}", file=sys.stderr)
             return 2
 
+    # What this GPU can actually do.  None means the query failed, in which
+    # case nothing is pre-skipped and every cell runs as it always did.
+    available = query_features(bin_dir, verbose=args.verbose)
+
     print(f"running {len(cells)} cells from {bin_dir}")
     if args.quick:   print("  (quick: one size per test)")
     if args.stress:  print("  (stress: includes iters=600 wrap test)")
+    if available is not None:
+        print(f"  gpu features: {' '.join(sorted(available)) or '(none)'}")
     print()
 
     results: list[Result] = []
     for cell in cells:
-        r = run_cell(cell, bin_dir, verbose=args.verbose)
-        results.append(r)
-        print(fmt_result(r), flush=True)
+        missing = ()
+        if available is not None:
+            missing = tuple(f for f in cell.requires if f not in available)
+        if missing:
+            results.append(Result(
+                cell, rc=0, duration_s=0.0, stdout="", stderr="",
+                skip_reason="needs " + ", ".join(missing)))
+        else:
+            results.append(run_cell(cell, bin_dir, verbose=args.verbose))
+        print(fmt_result(results[-1]), flush=True)
 
     # ── summary ──
     skipped = [r for r in results if r.skipped]
