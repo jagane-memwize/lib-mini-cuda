@@ -530,10 +530,23 @@ int mc_compute_channel_init(mc_ctx_t *ctx, mc_vas_t slot)
                              ctx->arch->kernels.store_dword.len) != 0)
     return -1;
 
-  if (mc_compute_module_init(ctx, slot, &ex->sm_owner_module,
-                             ctx->arch->kernels.sm_owner.bytes,
-                             ctx->arch->kernels.sm_owner.len) != 0)
-    return -1;
+  /* Only stage sm_owner where the architecture actually has it.  Ampere, Ada
+   * and GA10x ship no sm_owner cubin -- that kernel ends in a BAR1 doorbell
+   * write they have no aperture for -- so staging it there passed a NULL
+   * blob to a memcpy (undefined even for length 0) and allocated a QMD, CB0,
+   * SASS page and scratch page for a kernel that can never run.
+   *
+   * ex->sm_owner_module stays zeroed, which is what mc_compute_module_fini
+   * already tolerates.  Nothing reaches it: MC_FEAT_XFER_SM is withheld
+   * wherever the blob is absent. */
+  if (ctx->arch->kernels.sm_owner.bytes != NULL
+      && ctx->arch->kernels.sm_owner.len != 0)
+  {
+    if (mc_compute_module_init(ctx, slot, &ex->sm_owner_module,
+                               ctx->arch->kernels.sm_owner.bytes,
+                               ctx->arch->kernels.sm_owner.len) != 0)
+      return -1;
+  }
 
   DEBUG_LOG("mc_compute_channel ok: vas=%d tsg=0x%x ch=0x%x compute=0x%x "
             "gpfifo_gpu_va=0x%llx token=0x%x",

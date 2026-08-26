@@ -124,9 +124,11 @@ Three VAS arms reachable from the public allocators:
   the sema observation a valid completion gate without an
   on-GPU spin-wait.
 
-`mc_init` brings up all three carriers' channels (UVM, sysmem-DMA,
-sysmem-compute, FB-HOST_DMA, FB-SM_VICTIM_DMA, FB-compute)
-unconditionally.  Pointers from `mc_malloc_*(ctx, n, MC_VAS_UVM)`
+`mc_init` brings up the channels the requested features need: up to six
+(UVM, sysmem-DMA, sysmem-compute, FB-HOST_DMA, FB-SM_VICTIM_DMA, FB-compute),
+but fewer where a feature is unavailable or unrequested.  On Ampere, Ada and
+GA10x the three FB-carrier channels are never created at all, and
+`mc_init_ex(MC_FEATURES_BASIC)` creates neither carrier.  Pointers from `mc_malloc_*(ctx, n, MC_VAS_UVM)`
 are not addressable from carrier-bound channels, and vice versa;
 `mc_memcpy` validates that both arguments share a VAS and returns
 `MC_EINVAL` otherwise.
@@ -252,7 +254,8 @@ mc/
   core/             architecture-neutral lifecycle and VA-space policy
   driver/           RM and UVM ioctl surfaces
   hal/              method streams and submission primitives
-  arch/<name>/      per-architecture code (hopper, ampere, ada)
+  arch/<name>/      per-architecture code (hopper, ampere = GA100,
+                    ampere_ga10x, ada)
   experimental/     research paths
   kernels/          device-side sources
 ```
@@ -365,8 +368,9 @@ than a single umbrella:
   Blackwell classes rather than being Hopper-specific.  If a class ever
   moves a field, the build fails and names it.
 - `hal/submit.c` — submission mechanics: `mc_channel_arm`/`submit`/
-  `poll_sema`, `ring_doorbell`, `drain_channel`, and the `mc_userd_*`
-  accessors.  The only TU that names the USERD class struct.  No fds or RM
+  `poll_sema`, `ring_doorbell` and `drain_channel`, reaching USERD only
+  through the architecture's `ops->userd_*` hooks -- it names no USERD class
+  struct itself, which is what lets one submit path serve every backend.  No fds or RM
   handles opened here.
 - `core/vaspace.c` — VA pool (`va_pool_init`, `va_pool_reserve`) +
   carrier VA space helpers (`mc_va_space_init_uvm`,

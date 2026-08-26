@@ -45,6 +45,16 @@ static int failures;
     }                                                                   \
   } while (0)
 
+/* A check must not announce PASS if it added a failure.  Without this a
+ * failing run prints both FAIL and PASS lines for the same check, and the
+ * matrix greps for PASS.  Same idiom as tests/unit/mc_methods_test.c. */
+#define BEGIN_CHECK() int failures_at_entry = failures
+#define END_CHECK(name)                                                 \
+  do {                                                                  \
+    if (failures == failures_at_entry) printf("PASS: %s\n", (name));    \
+  } while (0)
+
+
 extern const mc_compute_ops_t mc_arch_ampere_compute;   /* QMD V03 */
 extern const mc_compute_ops_t mc_arch_hopper_compute;   /* QMD V04 */
 
@@ -176,6 +186,7 @@ static void build_both(uint8_t *v03, uint8_t *v04)
 
 static void test_golden_dwords(void)
 {
+    BEGIN_CHECK();
     uint8_t v03[256], v04[384];
 
     build_both(v03, v04);
@@ -186,11 +197,12 @@ static void test_golden_dwords(void)
                  sizeof(v03_golden) / sizeof(v03_golden[0]));
     check_golden("V04", v04, sizeof(v04), v04_golden,
                  sizeof(v04_golden) / sizeof(v04_golden[0]));
-    printf("PASS: golden QMD dwords for both versions\n");
+    END_CHECK("golden QMD dwords for both versions");
 }
 
 static void test_sizes_differ(void)
 {
+    BEGIN_CHECK();
     /* NVK: Qmd3_0 is [u32; 64], Qmd4_0 is [u32; 96].  The most load-bearing
      * difference, since everything downstream allocates by qmd_bytes. */
     EXPECT_MSG(mc_arch_ampere_compute.qmd_bytes == 256,
@@ -203,11 +215,12 @@ static void test_sizes_differ(void)
                "V03 version_major = %u", mc_arch_ampere_compute.version_major);
     EXPECT_MSG(mc_arch_hopper_compute.version_major == 4,
                "V04 version_major = %u", mc_arch_hopper_compute.version_major);
-    printf("PASS: QMD versions differ in size, not just field placement\n");
+    END_CHECK("QMD versions differ in size, not just field placement");
 }
 
 static void test_cbuf_addr_shift_differs(void)
 {
+    BEGIN_CHECK();
     uint8_t v03[256], v04[384];
     uint64_t lo, hi;
 
@@ -235,11 +248,12 @@ static void test_cbuf_addr_shift_differs(void)
                "V03 cbuf size field");
     EXPECT_MSG(get_bits(v04, 1599, 1587) == (TEST_CB0_BYTES >> 4),
                "V04 cbuf size field");
-    printf("PASS: V03 stores cbuf addresses unshifted, V04 shifts by 6\n");
+    END_CHECK("V03 stores cbuf addresses unshifted, V04 shifts by 6");
 }
 
 static void test_program_address(void)
 {
+    BEGIN_CHECK();
     uint8_t v03[256], v04[384];
     uint64_t lo, hi;
 
@@ -252,11 +266,12 @@ static void test_program_address(void)
     lo = get_bits(v04, 1247, 1216);
     hi = get_bits(v04, 1272, 1248);
     EXPECT_MSG(((hi << 32) | lo) == TEST_PROG_VA, "V04 program address");
-    printf("PASS: program address round-trips in both versions\n");
+    END_CHECK("program address round-trips in both versions");
 }
 
 static void test_version_and_caching(void)
 {
+    BEGIN_CHECK();
     uint8_t v03[256], v04[384];
 
     build_both(v03, v04);
@@ -280,11 +295,12 @@ static void test_version_and_caching(void)
     /* CONSTANT_BUFFER_VALID(0): bit 640 on V03, bit 416 on V04. */
     EXPECT_MSG(get_bits(v03, 640, 640) == 1, "V03 CONSTANT_BUFFER_VALID(0)");
     EXPECT_MSG(get_bits(v04, 416, 416) == 1, "V04 CONSTANT_BUFFER_VALID(0)");
-    printf("PASS: version, caching, register-count and cbuf-valid fields\n");
+    END_CHECK("version, caching, register-count and cbuf-valid fields");
 }
 
 static void test_grid_dims(void)
 {
+    BEGIN_CHECK();
     uint8_t v03[256], v04[384];
 
     build_both(v03, v04);
@@ -300,11 +316,12 @@ static void test_grid_dims(void)
     EXPECT_MSG(get_bits(v04, 1071, 1056) == 1, "V04 GRID_HEIGHT");
     EXPECT_MSG(get_bits(v04, 1103, 1088) == 1, "V04 GRID_DEPTH");
     EXPECT_MSG(get_bits(v04, 1167, 1152) == 1, "V04 CTA_THREAD_DIMENSION0");
-    printf("PASS: single-CTA single-thread grid dimensions\n");
+    END_CHECK("single-CTA single-thread grid dimensions");
 }
 
 static void test_no_stray_writes(void)
 {
+    BEGIN_CHECK();
     /* A V03 builder that used a V04 bit position would run off the end of a
      * 256-byte buffer, so this catches a pasted range most directly. */
     static uint8_t buf[512];
@@ -327,11 +344,12 @@ static void test_no_stray_writes(void)
             EXPECT_MSG(0, "V04 builder wrote past 384 bytes, at offset %u", i);
             break;
         }
-    printf("PASS: neither builder writes outside its QMD\n");
+    END_CHECK("neither builder writes outside its QMD");
 }
 
 static void test_cb0_offsets_are_per_arch(void)
 {
+    BEGIN_CHECK();
     /* nvcc places kernel parameters at a different constant-bank offset per
      * SM version.  Read off cuobjdump; if a future edit makes the two equal,
      * one was far more likely copied than NVIDIA changing the layout. */
@@ -359,7 +377,7 @@ static void test_cb0_offsets_are_per_arch(void)
     EXPECT_MSG(mc_cb0_alloc_bytes(&mc_arch_hopper_compute)
                >= mc_arch_hopper_compute.cb0_off_token + 4u,
                "sm_90 CB0 allocation does not cover its token offset");
-    printf("PASS: CB0 argument offsets differ per SM version and are covered\n");
+    END_CHECK("CB0 argument offsets differ per SM version and are covered");
 }
 
 int main(void)

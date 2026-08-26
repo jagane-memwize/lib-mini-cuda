@@ -59,7 +59,7 @@ sudo ./bin/mc_demo
 - `mc/` — library implementation, grouped by layer: `core/` (lifecycle and
   VA-space policy), `driver/` (RM and UVM ioctl surfaces), `hal/` (method
   streams, submission, and the architecture descriptor), `arch/<name>/`
-  (per-architecture code — `hopper`, `ampere`, `ada`), `experimental/`
+  (per-architecture code — `hopper`, `ampere` (GA100), `ampere_ga10x`, `ada`), `experimental/`
   (research paths), `internal/` (private headers), `kernels/` (device-side
   sources)
 - `tests/mc/` — integration demos and benchmarks

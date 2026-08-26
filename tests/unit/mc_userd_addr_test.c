@@ -84,6 +84,16 @@ static int failures;
     }                                                                   \
   } while (0)
 
+/* A check must not announce PASS if it added a failure.  Without this a
+ * failing run prints both FAIL and PASS lines for the same check, and the
+ * matrix greps for PASS.  Same idiom as tests/unit/mc_methods_test.c. */
+#define BEGIN_CHECK() int failures_at_entry = failures
+#define END_CHECK(name)                                                 \
+  do {                                                                  \
+    if (failures == failures_at_entry) printf("PASS: %s\n", (name));    \
+  } while (0)
+
+
 /* Highest USERD physical address a runlist entry with this HI mask can hold.
  * The field carries the HIGH 32 bits, so the reach is (mask << 32) | 2^32-1.
  * Mirrors kchannelIsUserdAddrSizeValid_GA100, which round-trips userdAddrHi
@@ -100,6 +110,7 @@ static bool userd_addr_fits(uint32_t hi_mask, uint64_t addr)
 
 static void test_measured_addresses_classify(void)
 {
+    BEGIN_CHECK();
   /* The exact pair captured on the A100.  These are the whole reason the
    * capability bit exists, so they are checked literally. */
   EXPECT_MSG(!userd_addr_fits(GA100_HI_MASK, MEASURED_SYSMEM_USERD),
@@ -125,11 +136,12 @@ static void test_measured_addresses_classify(void)
              "the measured overshoot is no longer small; re-check the claim "
              "that a sysmem USERD can pass by luck on a smaller host");
 
-  printf("PASS: measured A100 USERD addresses classify as observed\n");
+  END_CHECK("measured A100 USERD addresses classify as observed");
 }
 
 static void test_boundary(void)
 {
+    BEGIN_CHECK();
   EXPECT_MSG(userd_addr_fits(GA100_HI_MASK, (1ULL << 40) - 1),
              "GA100: 2^40-1 should be the last address that fits");
   EXPECT_MSG(!userd_addr_fits(GA100_HI_MASK, 1ULL << 40),
@@ -138,7 +150,7 @@ static void test_boundary(void)
              "GH100: 2^52-1 should be the last address that fits");
   EXPECT_MSG(!userd_addr_fits(GH100_HI_MASK, 1ULL << 52),
              "GH100: 2^52 should not fit");
-  printf("PASS: USERD address reach boundaries\n");
+  END_CHECK("USERD address reach boundaries");
 }
 
 /* Width declared by each architecture's own header, keyed by family.  A
@@ -174,6 +186,7 @@ static bool hi_mask_for_family(mc_arch_family_t f, uint32_t *out_mask)
  * 2^40 has no placement constraint worth encoding; one that cannot, does. */
 static void test_registry_agrees_with_headers(void)
 {
+    BEGIN_CHECK();
   const mc_arch_desc_t *const *regs;
   size_t n = 0, i;
 
@@ -201,13 +214,14 @@ static void test_registry_agrees_with_headers(void)
                a->name, (int)a->cap.userd_requires_vidmem,
                (unsigned long long)userd_reach(mask), (int)need_vidmem);
   }
-  printf("PASS: every backend's userd_requires_vidmem matches its header\n");
+  END_CHECK("every backend's userd_requires_vidmem matches its header");
 }
 
 /* Guard the specific values, so a future edit that flips one has to come
  * back through this file and its evidence. */
 static void test_known_backends(void)
 {
+    BEGIN_CHECK();
   const mc_arch_desc_t *amp = mc_arch_registry_by_name("ampere");
   const mc_arch_desc_t *hop = mc_arch_registry_by_name("hopper");
 
@@ -219,7 +233,7 @@ static void test_known_backends(void)
     EXPECT_MSG(!hop->cap.userd_requires_vidmem,
                "hopper must not require vidmem USERD: its runlist entry "
                "reaches 2^52, so the sysmem carrier is fine as-is");
-  printf("PASS: ampere requires vidmem USERD, hopper does not\n");
+  END_CHECK("ampere requires vidmem USERD, hopper does not");
 }
 
 int main(void)

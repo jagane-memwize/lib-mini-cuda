@@ -72,9 +72,9 @@ static bool ampere_userd_try_get_gpget(const void *userd, uint32_t *out_gpget)
 }
 
 /* Compute on GR0, every copy role on the selected non-GRCE LCE -- the same
- * policy as Hopper.  Ampere has no compute support in this build, so the GR0
- * arm is unreachable today; it is written out because the policy is about
- * roles rather than about what happens to be enabled. */
+ * policy as Hopper.  The GR0 arm is live: Ampere, Ada and GA10x all have a
+ * compute backend and all three share this function through
+ * mc_arch_ampere_ops. */
 static NvU32 ampere_engine_for_role(const mc_arch_desc_t *arch,
                                     mc_arch_role_t role, NvU32 selected_lce)
 {

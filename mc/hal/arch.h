@@ -69,8 +69,8 @@ struct mc_arch_layout {
     /* Byte offset of the VF doorbell inside the mapped USERMODE window.
      * Invariant at 0x90 from Ampere through Blackwell -- see the derivation
      * on MC_VF_DOORBELL_OFFSET in internal/types.h.  It lives here so a
-     * backend must state it rather than inherit it silently, and the
-     * registry asserts every backend agrees. */
+     * backend must state it rather than inherit it silently, and
+     * tests/unit/mc_arch_desc_test.c asserts every backend agrees. */
     NvU32 vf_doorbell_offset;
 
     NvU64 usermode_window_bytes;  /* VF register aperture size              */

@@ -9,12 +9,15 @@ driver, captures, trace tools, and protocol notes.
 ## Compatibility contract
 
 - This revision targets NVIDIA driver 610.43.02. Supported architectures are
-  Hopper, Ampere and Ada, each with a backend under `mc/arch/<name>/` and each
-  verified on hardware. Blackwell is designed for but not implemented.
+  Hopper, Ampere GA100 (`mc/arch/ampere`), Ampere GA10x
+  (`mc/arch/ampere_ga10x`) and Ada, each verified on hardware. Blackwell is
+  designed for but not implemented. Note GA100 and GA10x report the same
+  architecture id and are told apart by `rm_impl_mask`, so a new backend
+  sharing an architecture must narrow both masks.
 - Not every architecture provides every feature, and that is a property of the
-  silicon rather than a gap. Ampere and Ada have no BAR1 usermode aperture, so
-  no doorbell PTE, so no FB carrier and nothing SM-authored. Query with
-  `mc_feature_supported()`; never assume from the driver version.
+  silicon rather than a gap. Everything but Hopper lacks a BAR1 usermode
+  aperture, so no doorbell PTE, so no FB carrier and nothing SM-authored.
+  Query with `mc_feature_supported()`; never assume from the driver version.
 - `third_party/open-gpu-kernel-modules` is pinned to the matching official
   source. Do not silently build against another driver revision.
 - Private RM and UVM interfaces are version-specific. A new supported driver
@@ -36,8 +39,8 @@ driver, captures, trace tools, and protocol notes.
   Preserve the existing fence discipline.
 - The work-submit doorbell is at `+0x90` in the mapped USERMODE window. This is
   now `lay.vf_doorbell_offset` in each architecture descriptor, and
-  `hal/registry.c` asserts every backend agrees — state it per backend rather
-  than reintroducing a shared constant.
+  `tests/unit/mc_arch_desc_test.c` asserts every backend agrees — state it per
+  backend rather than reintroducing a shared constant.
 - The CE channel deliberately selects a non-GRCE LCE and uses its COPY engine
   consistently for the TSG and channel. Do not reintroduce the historical RM
   engine-lookup patch as a prerequisite.
@@ -53,7 +56,7 @@ driver, captures, trace tools, and protocol notes.
   changes.
 - Constant-bank offsets for kernel arguments belong to the compiled SASS, not
   to the QMD version: nvcc places them at `0x210` on sm_90 and `0x160` on
-  sm_80. Read them from `cuobjdump --dump-sass` for the architecture's own
+  sm_80/86/89. Read them from `cuobjdump --dump-sass` for the architecture's own
   cubin and record them in its compute ops. Never carry another
   architecture's over.
 - Before adding an ioctl or changing a GPU command bit field, establish its
