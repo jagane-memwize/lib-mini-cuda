@@ -59,6 +59,10 @@ typedef enum {
                          * (PBDMA wedged, malformed pushbuffer, etc.) */
     MC_EVERSION   = 7,  /* loaded NVIDIA driver does not exactly match the
                          * private RM/UVM ABI targeted by this build */
+    MC_EARCH      = 8,  /* the GPU's architecture has no backend in this
+                         * build, or the backend's classes are not present
+                         * on this device.  Reported before any
+                         * architecture-specific object is allocated. */
 } mc_status_t;
 
 /* Which agent performs an mc_memcpy transfer.  Both arms produce

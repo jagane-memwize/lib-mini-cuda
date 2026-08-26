@@ -38,6 +38,7 @@
 #include "internal/alloc.h"
 #include "internal/channel.h"
 #include "hal/arch.h"
+#include "hal/detect.h"
 
 /* One line summarising every channel mc_init brought up.  Kept out of mc_init
  * so the six lookups it needs do not land in that function's scope. */
@@ -81,13 +82,6 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
   ctx = calloc(1, sizeof(*ctx));
   if (ctx == NULL) { ERROR_LOG("calloc ctx"); return MC_EALLOC; }
   ctx->ctl_fd = ctx->dev_fd = ctx->uvm_fd = -1;
-
-  /* Select the architecture descriptor.  Hard-wired to Hopper for now: chip
-   * detection needs a subdevice, which does not exist this early, so it slots
-   * in further down once the RM object tree is up.  Everything below reads
-   * class ids and layout offsets through ctx->arch rather than naming a
-   * generation, so that later step changes only this assignment. */
-  ctx->arch = &mc_arch_hopper;
 
   /* Open only the control device first.  A private ABI mismatch must be
    * rejected before /dev/nvidia0 is opened, the VA pool is reserved, or any
@@ -134,6 +128,23 @@ mc_status_t mc_init(mc_ctx_t **out_ctx)
   ctx->h_subdevice = rm_alloc_subdevice(ctx->ctl_fd, ctx->h_client,
                                         ctx->h_device);
   if (!ctx->h_client || !ctx->h_device || !ctx->h_subdevice) goto fail;
+
+  /* Identify the GPU and select its backend.  This is the earliest point it
+   * can run -- the architecture query is subdevice-scoped -- and it must run
+   * before rm_alloc_usermode below, which is the first allocation that names
+   * an architecture-specific class.
+   *
+   * Everything allocated above is architecture-invariant (NV01_ROOT,
+   * NV01_DEVICE_0, NV20_SUBDEVICE_0), so a rejected chip unwinds through the
+   * ordinary failure path having touched nothing chip-specific.  Note this
+   * does mean detection runs after some RM objects exist, unlike the driver
+   * version check, which still runs before /dev/nvidia0 is even opened. */
+  if (mc_detect_arch(ctx->ctl_fd, ctx->h_client, ctx->h_device,
+                     ctx->h_subdevice, &ctx->arch) != 0)
+  {
+    fail_status = MC_EARCH;
+    goto fail;
+  }
 
   /* Hold boost clocks for the life of the client, as libcuda does —
    * otherwise a copy-only workload runs the CE at the idle SM clock.

@@ -85,6 +85,23 @@ void    *rm_map_memory(int ctl_fd, const char *dev_path,
 int      rm_control(int ctl_fd, NvHandle client, NvHandle object, NvU32 cmd,
                     void *params, NvU32 params_size);
 NvU32    pick_non_grce_lce(int ctl_fd, NvHandle h_client, NvHandle h_subdevice);
+
+/* NV2080_CTRL_CMD_MC_GET_ARCH_INFO on a subdevice.  Returns 0 on success and
+ * fills the out-params; non-zero on failure with them left untouched.
+ * `implementation` is only meaningful together with `architecture` -- the
+ * values are namespaced per architecture. */
+int      rm_get_arch_info(int ctl_fd, NvHandle h_client, NvHandle h_subdevice,
+                          NvU32 *out_architecture, NvU32 *out_implementation,
+                          NvU32 *out_revision);
+
+/* NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2 on a DEVICE (not a subdevice).
+ * Writes at most `max_classes` entries and stores the count in *out_count.
+ * V2 is used deliberately: the V1 form embeds an NvP64 pointer that would
+ * need marshalling, while V2 is a flat struct that round-trips through the
+ * ordinary control path. */
+int      rm_get_classlist(int ctl_fd, NvHandle h_client, NvHandle h_device,
+                          NvU32 *out_classes, NvU32 max_classes,
+                          NvU32 *out_count);
 void     rm_perf_boost(int ctl_fd, NvHandle client, NvHandle subdevice);
 
 NvHandle rm_alloc_root(int ctl_fd);

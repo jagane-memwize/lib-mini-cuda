@@ -34,13 +34,17 @@ source and during error attribution.
 
 1. Verify that the loaded RM version exactly matches the pinned source.
 2. Open `/dev/nvidiactl`, `/dev/nvidia0`, and `/dev/nvidia-uvm`.
-3. Allocate the RM root, device, subdevice, USERMODE aperture, and VA spaces.
-4. Query copy-engine capabilities and select a present, sysmem-capable LCE
+3. Allocate the RM root, device and subdevice, then identify the GPU and
+   select its architecture backend, verifying the device exposes that
+   backend's classes. An unsupported chip returns `MC_EARCH` before any
+   architecture-specific object is allocated.
+4. Allocate the USERMODE aperture and VA spaces.
+5. Query copy-engine capabilities and select a present, sysmem-capable LCE
    whose runlist is not shared with GR.
-5. Create the channel groups and their GPFIFO, USERD, pushbuffer, semaphore,
+6. Create the channel groups and their GPFIFO, USERD, pushbuffer, semaphore,
    and engine objects.
-6. Register the UVM-owned VA space and its channel with UVM.
-7. Create the sysmem and FB carrier channels, including compute channels used
+7. Register the UVM-owned VA space and its channel with UVM.
+8. Create the sysmem and FB carrier channels, including compute channels used
    by the SM-authored paths.
 
 The source wrappers encode the fields that must agree across the TSG, channel,
@@ -87,6 +91,9 @@ ordering rules are summarized in [the compute-launch guide](compute_kernel_launc
 ## Failure boundaries
 
 - A driver/source mismatch fails before RM objects are allocated.
+- An unsupported GPU architecture, or one whose device does not expose the
+  backend's classes, fails with `MC_EARCH` before any architecture-specific
+  object is allocated.
 - A missing suitable copy engine fails during initialization.
 - Cross-VA-space pointers, unknown pointers, zero sizes, and transfers larger
   than the CE method field return `MC_EINVAL`.

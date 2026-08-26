@@ -97,7 +97,8 @@ LIBMC_MAP    := mc/libmc.map
 # per-architecture code; experimental/ holds the research paths.
 MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
                 mc/core/memcpy.c mc/core/vaspace.c
-MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c
+MC_HAL_SRCS  := mc/hal/submit.c mc/hal/methods.c mc/hal/registry.c \
+                mc/hal/detect.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
 MC_ARCH_SRCS := mc/arch/hopper/backend.c mc/arch/hopper/qmd_v04.c
 MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c \
@@ -141,6 +142,8 @@ UNIT_WRAP_mc_init_version_test  := open ioctl close
 # Pure encoding test: links only the emitters, interposes nothing.
 UNIT_SRCS_mc_methods_test       := mc/hal/methods.c mc/arch/hopper/backend.c
 UNIT_SRCS_mc_arch_desc_test     := mc/arch/hopper/backend.c
+UNIT_SRCS_mc_arch_detect_test   := mc/hal/detect.c mc/hal/registry.c \
+                                   mc/arch/hopper/backend.c mc/driver/rm.c
 
 # Resolve a test's wrap set / source list, falling back to the defaults.
 unit_wrap = $(if $(UNIT_WRAP_$(1)),$(UNIT_WRAP_$(1)),$(UNIT_WRAP_DEFAULT))
@@ -343,6 +346,9 @@ sm_owner: mc/arch/hopper/sm_owner_sass.h
 #                            Includes hal/method_abi.h, whose _Static_assert
 #                            bank proves the encodings are shared across the
 #                            Ampere/Ada/Hopper/Blackwell classes.
+#   hal/registry.c           the compiled-in backend table + pure lookups.
+#   hal/detect.c             identify the GPU and select its backend, then
+#                            verify the device exposes that backend's classes.
 #   hal/submit.c             submission mechanics: produce -> fence -> publish,
 #                            USERD accessors, doorbell, semaphore polling,
 #                            drain.  The only TU naming the USERD struct.

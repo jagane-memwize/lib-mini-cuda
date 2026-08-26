@@ -56,6 +56,8 @@
 #include "ctrl/ctrlc36f.h"
 #include "ctrl/ctrla06f/ctrla06fgpfifo.h"
 #include "ctrl/ctrl2080/ctrl2080gpu.h"
+#include "ctrl/ctrl2080/ctrl2080mc.h"   /* MC_GET_ARCH_INFO */
+#include "ctrl/ctrl0080/ctrl0080gpu.h"  /* GPU_GET_CLASSLIST_V2 */
 
 #include "internal/types.h"
 #include "internal/log.h"
@@ -994,6 +996,69 @@ NvU32 pick_non_grce_lce(int ctl_fd, NvHandle h_client,
               (unsigned long long)caps.present, grce_list);
   }
   return NV2080_ENGINE_TYPE_COPY(selected_lce);
+}
+
+/*
+ * Identify the chip.  NV2080_CTRL_CMD_MC_GET_ARCH_INFO returns a flat
+ * {architecture, implementation, revision, subRevision}, which is a better
+ * fit than NV2080_CTRL_CMD_GPU_GET_INFO_V2 -- that one needs an index list
+ * built up per field, and this SDK does not even define an ARCHITECTURE
+ * index for it.
+ *
+ * The implementation value is namespaced per architecture (GA100, GH100,
+ * AD100, GB100 and GB200 all report 0), so callers must treat the pair as a
+ * unit and test the architecture first.
+ */
+int rm_get_arch_info(int ctl_fd, NvHandle h_client, NvHandle h_subdevice,
+                     NvU32 *out_architecture, NvU32 *out_implementation,
+                     NvU32 *out_revision)
+{
+  NV2080_CTRL_MC_GET_ARCH_INFO_PARAMS p = {};
+
+  if (rm_control(ctl_fd, h_client, h_subdevice,
+                 NV2080_CTRL_CMD_MC_GET_ARCH_INFO, &p, sizeof(p)) != 0)
+  {
+    ERROR_LOG("NV2080_CTRL_CMD_MC_GET_ARCH_INFO failed");
+    return -1;
+  }
+
+  if (out_architecture)  *out_architecture  = p.architecture;
+  if (out_implementation) *out_implementation = p.implementation;
+  if (out_revision)      *out_revision      = p.revision;
+  return 0;
+}
+
+/*
+ * Enumerate the classes this device exposes.  Parented on the DEVICE, not
+ * the subdevice -- NV0080 controls are device-scoped.
+ */
+int rm_get_classlist(int ctl_fd, NvHandle h_client, NvHandle h_device,
+                     NvU32 *out_classes, NvU32 max_classes, NvU32 *out_count)
+{
+  NV0080_CTRL_GPU_GET_CLASSLIST_V2_PARAMS p = {};
+  NvU32                                   n;
+
+  if (out_count) *out_count = 0;
+  if (out_classes == NULL || out_count == NULL) return -1;
+
+  if (rm_control(ctl_fd, h_client, h_device,
+                 NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2, &p, sizeof(p)) != 0)
+  {
+    ERROR_LOG("NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2 failed");
+    return -1;
+  }
+
+  n = p.numClasses;
+  /* RM should never exceed its own array bound, but this value crosses a
+   * trust boundary and indexes a copy loop, so clamp rather than trust. */
+  if (n > NV0080_CTRL_GPU_CLASSLIST_MAX_SIZE)
+    n = NV0080_CTRL_GPU_CLASSLIST_MAX_SIZE;
+  if (n > max_classes)
+    n = max_classes;
+
+  memcpy(out_classes, p.classList, (size_t)n * sizeof(NvU32));
+  *out_count = n;
+  return 0;
 }
 
 /* ── RM object type helpers ────────────────────────────────────────────────

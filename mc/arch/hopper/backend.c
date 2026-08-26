@@ -24,12 +24,22 @@
 #include "class/clc8b5.h"        /* HOPPER_DMA_COPY_A */
 #include "class/clcbc0.h"        /* HOPPER_COMPUTE_A */
 
+#include "ctrl/ctrl2080/ctrl2080mc.h"  /* ARCHITECTURE_GH100 */
+
 #include "hal/arch.h"
 #include "internal/types.h"
 
 const mc_arch_desc_t mc_arch_hopper = {
     .name   = "hopper",
     .family = MC_ARCH_HOPPER,
+
+    .rm_architecture = NV2080_CTRL_MC_ARCH_INFO_ARCHITECTURE_GH100,  /* 0x180 */
+    /* Any GH100 implementation.  Discrete H100 parts (PCIe, SXM, NVL) all
+     * report IMPLEMENTATION_GH100 = 0, and GH100_SOC (Grace Hopper) exposes
+     * the same RM class set, so there is nothing to gain by rejecting it --
+     * the class list is verified separately, which is the check that
+     * actually matters. */
+    .rm_impl_mask    = 0,
 
     .cls = {
         .usermode       = HOPPER_USERMODE_A,        /* 0xC661 */

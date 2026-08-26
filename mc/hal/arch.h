@@ -109,6 +109,22 @@ typedef struct {
     const char      *name;          /* "hopper" — appears in log lines      */
     mc_arch_family_t family;
 
+    /* How this backend is recognised, from NV2080_CTRL_CMD_MC_GET_ARCH_INFO.
+     *
+     * `rm_architecture` is the discriminator and must always be tested:
+     * implementation values are namespaced PER ARCHITECTURE, so GA100, GH100,
+     * AD100, GB100 and GB200 all report implementation 0.  Matching on an
+     * implementation alone would claim four other architectures.
+     *
+     * `rm_impl_mask` narrows within an architecture: bit i set means
+     * implementation i is accepted.  Zero means "any implementation of this
+     * architecture", which is the right default -- rejecting an unlisted
+     * implementation of an architecture we do support trades a working GPU
+     * for no safety, since the class set is what actually matters and that is
+     * verified separately against the device's class list. */
+    NvU32            rm_architecture;
+    NvU32            rm_impl_mask;
+
     struct mc_arch_classes cls;
     struct mc_arch_layout  lay;
     struct mc_arch_caps    cap;

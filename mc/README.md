@@ -301,6 +301,13 @@ than a single umbrella:
   and every class id and arch-varying constant is read through it rather
   than named at the call site.  Invariant-checked by
   `tests/unit/mc_arch_desc_test.c`.
+- `hal/registry.c` + `hal/detect.c` — backend selection.  The registry is the
+  explicit table of compiled-in backends plus pure lookups over it; detection
+  asks `NV2080_CTRL_CMD_MC_GET_ARCH_INFO` what the chip is, then verifies
+  against `NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2` that the device actually
+  exposes the classes the chosen backend will allocate.  Unknown silicon is
+  `MC_EARCH`, not a guess.  `MC_ARCH_FORCE=<name>` overrides selection for
+  bring-up and warns loudly.  Tested by `tests/unit/mc_arch_detect_test.c`.
 - `hal/method_abi.h` — a `_Static_assert` bank, built from the SDK `DRF_*`
   macros, proving the encodings above are shared by the Ampere, Ada and
   Blackwell classes rather than being Hopper-specific.  If a class ever
