@@ -170,19 +170,44 @@ static void check_one(const mc_arch_desc_t *a)
                a->name);
 }
 
-/* Two backends must never claim the same identity, or detection becomes
- * order-dependent. */
+/* Do two backends' implementation masks admit a common implementation?
+ * A mask of 0 means "any implementation of this architecture", so it overlaps
+ * with everything on the same architecture, including another 0. */
+static bool impl_masks_overlap(NvU32 a, NvU32 b)
+{
+  if (a == 0 || b == 0) return true;
+  return (a & b) != 0;
+}
+
+/* Two backends must never claim the same chip, or detection becomes
+ * order-dependent -- whichever sits earlier in the registry table wins, and
+ * the other is dead code that looks live.
+ *
+ * The identity that matters is (rm_architecture, rm_impl_mask), NOT the
+ * family.  This check used to compare families, which held only while every
+ * architecture had exactly one backend.  GA100 and GA10x are both
+ * MC_ARCH_AMPERE and both report architecture 0x170 -- they are genuinely the
+ * same family and must be distinguished by implementation.  That is precisely
+ * the case a family comparison cannot see, and the case that bit: an A2
+ * (GA107) was claimed by the GA100 backend, whose mask was 0, and failed on
+ * the class list. */
 static void check_distinct(void)
 {
   size_t i, j;
   for (i = 0; i < N_BACKENDS; i++)
     for (j = i + 1; j < N_BACKENDS; j++) {
-      EXPECT_MSG(all_backends[i]->family != all_backends[j]->family,
-                 "backends %s and %s share family %d",
-                 all_backends[i]->name, all_backends[j]->name,
-                 (int)all_backends[i]->family);
-      EXPECT_MSG(strcmp(all_backends[i]->name, all_backends[j]->name) != 0,
-                 "two backends are both named %s", all_backends[i]->name);
+      const mc_arch_desc_t *a = all_backends[i], *b = all_backends[j];
+
+      if (a->rm_architecture == b->rm_architecture)
+        EXPECT_MSG(!impl_masks_overlap(a->rm_impl_mask, b->rm_impl_mask),
+                   "backends %s and %s both claim architecture 0x%x with "
+                   "overlapping implementation masks (0x%x and 0x%x); "
+                   "detection would depend on registry order",
+                   a->name, b->name, (unsigned)a->rm_architecture,
+                   (unsigned)a->rm_impl_mask, (unsigned)b->rm_impl_mask);
+
+      EXPECT_MSG(strcmp(a->name, b->name) != 0,
+                 "two backends are both named %s", a->name);
     }
 }
 

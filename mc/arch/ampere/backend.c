@@ -75,9 +75,13 @@ const mc_arch_desc_t mc_arch_ampere = {
     .family = MC_ARCH_AMPERE,
 
     .rm_architecture = NV2080_CTRL_MC_ARCH_INFO_ARCHITECTURE_GA100,  /* 0x170 */
-    /* Any GA100 implementation.  The class list is verified separately at
-     * detection time, which is the check that actually matters. */
-    .rm_impl_mask    = 0,
+    /* GA100 the DIE, not GA100 the architecture id.  The GA10x parts report
+     * the same architecture 0x170 and expose the _B copy and compute classes
+     * instead of the _A forms below, so this backend must claim only
+     * implementation 0 and leave the rest to arch/ampere_ga10x.  A mask of 0
+     * ("any implementation") used to be here and was wrong: it made an A2
+     * (GA107) match this backend and fail the class check. */
+    .rm_impl_mask    = 1u << NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GA100,
 
     .cls = {
         .usermode       = AMPERE_USERMODE_A,        /* 0xC561 */

@@ -102,7 +102,8 @@ MC_ARCHS ?= $(sort $(notdir $(patsubst %/,%,$(wildcard mc/arch/*/))))
 # SM version each architecture's kernels are compiled for.  SASS is not
 # portable across these, which is why every architecture needs its own cubin
 # of every kernel rather than sharing one.
-ARCH_SM_ampere    := sm_80
+ARCH_SM_ampere       := sm_80
+ARCH_SM_ampere_ga10x := sm_86
 ARCH_SM_ada       := sm_89
 ARCH_SM_hopper    := sm_90
 ARCH_SM_blackwell := sm_100

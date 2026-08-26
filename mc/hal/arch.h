@@ -316,7 +316,8 @@ struct mc_arch_desc {
 /* Compiled-in backends.  Each is declared unconditionally -- a declaration
  * costs nothing -- while hal/registry.c decides membership from the
  * MC_HAVE_ARCH_<NAME> defines the build passes for whatever MC_ARCHS names. */
-extern const mc_arch_desc_t mc_arch_ampere;
+extern const mc_arch_desc_t mc_arch_ampere;        /* GA100 die   */
+extern const mc_arch_desc_t mc_arch_ampere_ga10x;  /* GA102-GA107 */
 extern const mc_arch_desc_t mc_arch_ada;
 extern const mc_arch_desc_t mc_arch_hopper;
 extern const mc_arch_desc_t mc_arch_blackwell;

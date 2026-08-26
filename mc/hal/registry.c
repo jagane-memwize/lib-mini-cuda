@@ -25,6 +25,9 @@ static const mc_arch_desc_t *const g_backends[] = {
 #if MC_HAVE_ARCH_AMPERE
     &mc_arch_ampere,
 #endif
+#if MC_HAVE_ARCH_AMPERE_GA10X
+    &mc_arch_ampere_ga10x,
+#endif
 #if MC_HAVE_ARCH_ADA
     &mc_arch_ada,
 #endif
