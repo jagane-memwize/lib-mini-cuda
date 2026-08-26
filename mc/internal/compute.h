@@ -47,11 +47,4 @@
 mc_status_t mc_sm_owner_submit(mc_ctx_t *ctx, mc_vas_t vas, uint64_t src_gpu_va,
                                uint64_t dst_gpu_va, uint32_t size_bytes);
 
-/* Look up an mc_alloc_t slot by user pointer.  Returns NULL if `ptr`
- * was not returned by mc_malloc_* on this context (or `ptr` is NULL).
- * Cross-file callers (e.g. the chain-doorbell functions in
- * experimental/compute.c) use this to validate user-supplied pointer
- * pairs before dispatching a submission. */
-mc_alloc_t *alloc_table_lookup(mc_ctx_t *ctx, const void *ptr);
-
 #endif /* MC_INTERNAL_COMPUTE_H */

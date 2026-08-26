@@ -240,7 +240,7 @@ FB-carrier path) and `tests/mc/mc_sm_owner_demo.c`.
 
 ## Reference — source layout
 
-The library is split into eight translation units plus the embedded
+The library is split into eleven translation units plus the embedded
 SM-owner kernel, grouped by layer:
 
 ```
@@ -274,8 +274,9 @@ than a single umbrella:
   `mc_va_space_t`, `mc_alloc_t`, the per-kind extras union, `struct mc_ctx`.
 - `log.h` — `DEBUG_LOG` / `WARN_LOG` / `ERROR_LOG` and `CHECK`.
 - `rm.h`, `uvm.h` — the driver-wrapper prototypes.
-- `submit.h`, `vaspace.h`, `compute.h` — the prototypes for `hal/submit.c`,
-  `core/vaspace.c`, and the SM-authored helper.
+- `submit.h`, `vaspace.h`, `channel.h`, `alloc.h`, `compute.h` — the
+  prototypes for `hal/submit.c`, `core/vaspace.c`, `core/channel.c`,
+  `core/alloc.c`, and the SM-authored helper.
 
 **Library translation units:**
 
@@ -303,19 +304,28 @@ than a single umbrella:
   `mc_va_space_install_doorbell_pte`,
   `mc_va_space_alloc_scratch`, `mc_va_space_alloc_vidmem`,
   `mc_va_space_fini`).
-- `core/core.c` — lifecycle: per-kind channel init/fini, `mc_init`,
-  `mc_fini`, the allocation table, `mc_malloc_*`, `mc_free`,
-  `mc_gpu_va`, `mc_memcpy` (with VAS dispatch + agent dispatch),
-  and the host-authored chain-of-evidence demos (`mc_dbell_demo_ring`,
-  `mc_memcpy_gpu_doorbell_ce`).
+- `core/context.c` — lifecycle: `mc_init` (version check, device open, VA
+  pool, RM object tree, engine selection, VA-space and channel bring-up)
+  and `mc_fini` (strict-LIFO teardown, best-effort so one failure does not
+  strand the rest).
+- `core/channel.c` — per-kind channel bring-up and teardown
+  (`mc_{dma,compute,uvm}_channel_{init,fini}`), plus the shared core
+  resource plumbing.  Declared in `internal/channel.h`.
+- `core/alloc.c` — the allocation table and the allocator surface:
+  `mc_malloc_*`, `mc_host_register`/`_unregister`, `mc_free`, `mc_gpu_va`.
+  Declared in `internal/alloc.h`.
+- `core/memcpy.c` — `mc_memcpy` and its VAS + agent dispatch.
 - `arch/hopper/qmd_v04.{c,h}` — Hopper QMD V04 builder + embedded SASS for
   the simple `mc_doorbell_kernel`.
+- `experimental/doorbell.c` — host-authored CE-doorbell demos
+  (`mc_dbell_demo_ring`, `mc_memcpy_gpu_doorbell_ce`): the copy engine
+  writes a token to the BAR1 doorbell aperture through a GPU MMU PTE.
 - `experimental/compute.c` — HOPPER_COMPUTE_A demos
   (`mc_compute_doorbell_kernel`, `mc_memcpy_gpu_doorbell_sm`,
   `mc_compute_get_scratch`).  Builds the per-channel one-time setup
   pushbuffer (cache invalidates + shader-memory windows).
 - `experimental/sm_owner.c` — SM-authored CE submission helper.  Library-internal
-  (declared in `mc/internal/*.h`); reached through the public API via
+  (declared in `internal/compute.h`); reached through the public API via
   `mc_memcpy(..., MC_XFER_SM)`.  Wraps the embedded sm_owner kernel
   in a launch-and-poll path against the compute channel.
 

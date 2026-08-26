@@ -13,6 +13,7 @@
 #ifndef MC_INTERNAL_SUBMIT_H
 #define MC_INTERNAL_SUBMIT_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <time.h>           /* struct timespec */
 
@@ -34,14 +35,33 @@ uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
                         uint32_t gp_put_index, uint32_t ring_entries,
                         uintptr_t pb_cpu_va, uint32_t pb_offset,
                         uint32_t method_bytes);
-void     ring_doorbell(volatile HopperAControlGPFifo *userd,
+void     ring_doorbell(void *userd,
                        uint32_t new_gp_put,
                        volatile uint32_t *vf_doorbell,
                        uint32_t work_submit_token);
 
 /* Wait for the channel to drain (USERD GPGet catches up to GPPut)
  * or timeout_ms elapses.  Used during channel teardown. */
-void     drain_channel(volatile HopperAControlGPFifo *userd, long timeout_ms);
+void     drain_channel(void *userd, long timeout_ms);
+
+/* USERD field accessors.
+ *
+ * USERD is a per-channel-class structure, so its layout belongs to the
+ * channel class rather than to the library: HOPPER_CHANNEL_GPFIFO_A uses
+ * HopperAControlGPFifo, AMPERE_CHANNEL_GPFIFO_A uses AmpereAControlGPFifo
+ * (identical layout), and BLACKWELL_CHANNEL_GPFIFO_A uses Nvc96fControl,
+ * which exposes GPPut and *no GPGet at all*.  Keeping the cast inside
+ * hal/submit.c means mc_channel_t can hold an untyped `void *userd_cpu`
+ * and internal/types.h needs no class header.
+ *
+ * mc_userd_try_get_gpget returns false when the class does not expose
+ * GPGet; callers must have a fallback rather than assuming a value.  It
+ * always succeeds today and exists so the Blackwell case has a shape to
+ * land in.
+ */
+void     mc_userd_set_gpput(void *userd, uint32_t value);
+uint32_t mc_userd_get_gpput(const void *userd);
+bool     mc_userd_try_get_gpget(const void *userd, uint32_t *out_gpget);
 
 /* Channel submission primitives — see comments above the
  * implementations in hal/submit.c for the produce -> fence -> publish

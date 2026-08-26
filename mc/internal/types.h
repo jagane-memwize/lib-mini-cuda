@@ -25,7 +25,6 @@
 /* NV SDK types — needed in this header for mc_ctx_t fields. */
 #include "nvtypes.h"
 #include "nvCpuUuid.h"      /* NV_UUID_LEN */
-#include "class/clc86f.h"   /* HopperAControlGPFifo */
 
 #define MC_UNUSED __attribute__((unused))
 
@@ -285,9 +284,12 @@ typedef struct {
 
     /* CPU pointers (BAR1 / sysmem mappings). */
     void                          *gpfifo_cpu;        /* base of the gpfifo+userd alloc */
-    void                          *userd_cpu;         /* CPU base of the USERD region */
+    void                          *userd_cpu;         /* CPU base of the USERD region.
+                                                       * Untyped on purpose: the USERD
+                                                       * struct is per channel class, so
+                                                       * only hal/submit.c names it.  Use
+                                                       * the mc_userd_* accessors. */
     volatile uint32_t             *gpfifo_ring;
-    volatile HopperAControlGPFifo *userd;             /* typed alias of userd_cpu */
     uint32_t                      *pb_cpu;
     volatile uint32_t             *sema_ptr;
     volatile uint32_t             *sema_sysmem_ptr;   /* FB-victim only: CPU alias of sema_sysmem_gpu_va */

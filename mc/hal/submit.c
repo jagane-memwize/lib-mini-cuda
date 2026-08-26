@@ -29,6 +29,40 @@
 #include "internal/log.h"
 #include "internal/submit.h"
 
+/* ── USERD access ─────────────────────────────────────────────────────────
+ *
+ * USERD's layout belongs to the channel class, not to the library, so this
+ * file is the only place that names the class struct.  mc_channel_t carries
+ * an untyped `void *userd_cpu` and internal/types.h needs no class header.
+ *
+ * Layout across the generations that matter here:
+ *   AMPERE_CHANNEL_GPFIFO_A    Nvc56fControl   GPGet @0x88, GPPut @0x8c
+ *   HOPPER_CHANNEL_GPFIFO_A    Nvc86fControl   GPGet @0x88, GPPut @0x8c
+ *   BLACKWELL_CHANNEL_GPFIFO_A Nvc96fControl   GPPut @0x8c, NO GPGet
+ *
+ * Blackwell dropping GPGet is why the getter is a try_ form: a caller that
+ * assumes a readable GPGet has no correct behaviour on that class.
+ */
+#define USERD(p) ((volatile HopperAControlGPFifo *)(p))
+
+void mc_userd_set_gpput(void *userd, uint32_t value)
+{
+  USERD(userd)->GPPut = value;
+}
+
+uint32_t mc_userd_get_gpput(const void *userd)
+{
+  return USERD(userd)->GPPut;
+}
+
+bool mc_userd_try_get_gpget(const void *userd, uint32_t *out_gpget)
+{
+  if (userd == NULL || out_gpget == NULL)
+    return false;
+  *out_gpget = USERD(userd)->GPGet;
+  return true;
+}
+
 /*
  * Kepler-style method header.  One 32-bit word that describes the payload
  * dwords that follow; PBDMA parses it to figure out which method addresses
@@ -222,11 +256,11 @@ uint32_t write_gp_entry(volatile uint32_t *gpfifo_ring,
  * On x86 both are Write-Combine stores; the sfences flush WC buffers so
  * the GPU observes the writes in causal order.
  */
-void ring_doorbell(volatile HopperAControlGPFifo *userd,
+void ring_doorbell(void *userd,
                           uint32_t new_gp_put, volatile uint32_t *vf_doorbell,
                           uint32_t work_submit_token)
 {
-  userd->GPPut = new_gp_put;
+  USERD(userd)->GPPut = new_gp_put;
   _mm_sfence();
   *vf_doorbell = work_submit_token;
   _mm_sfence();
@@ -290,7 +324,7 @@ mc_status_t mc_channel_arm(mc_channel_t *ch,
    * wake event.  ring_doorbell() inside mc_channel_submit() does
    * the same store + sfence + the BAR1 doorbell write; mc_channel_arm
    * stops here and lets a different agent ring. */
-  ch->userd->GPPut = ch->gp_put;
+  mc_userd_set_gpput(ch->userd_cpu, ch->gp_put);
   _mm_sfence();
 
   return MC_OK;
@@ -321,13 +355,16 @@ mc_status_t mc_channel_submit(mc_channel_t *ch,
 
   /* ring_doorbell does USERD GPPut + sfence + BAR1 doorbell + sfence
    * internally — the two writes that submit work on Hopper. */
-  ring_doorbell(ch->userd, ch->gp_put, vf_doorbell, ch->work_submit_token);
+  ring_doorbell(ch->userd_cpu, ch->gp_put, vf_doorbell, ch->work_submit_token);
 
   rc = mc_channel_poll_sema(ch->sema_ptr, ch->sema_payload, t0);
   if (rc != MC_OK)
   {
-    uint32_t userd_gp_put = ch->userd ? ch->userd->GPPut : 0xffffffffu;
-    uint32_t userd_gp_get = ch->userd ? ch->userd->GPGet : 0xffffffffu;
+    uint32_t userd_gp_put = ch->userd_cpu ? mc_userd_get_gpput(ch->userd_cpu)
+                                          : 0xffffffffu;
+    uint32_t userd_gp_get = 0xffffffffu;
+    if (ch->userd_cpu)
+      (void)mc_userd_try_get_gpget(ch->userd_cpu, &userd_gp_get);
     uint32_t sema_actual  = ch->sema_ptr ? *ch->sema_ptr : 0xffffffffu;
     WARN_LOG("mc_channel_submit: poll failed rc=%d role=%d type=%d vas=%d "
              "h_channel=0x%x gp_put_mirror=0x%x USERD{GPPut=0x%x GPGet=0x%x} "
@@ -356,12 +393,21 @@ mc_status_t mc_channel_submit(mc_channel_t *ch,
  * completion, so GPPut should already equal GPGet at entry — this is
  * insurance, not a hot path.
  */
-void drain_channel(volatile HopperAControlGPFifo *userd, long timeout_ms)
+void drain_channel(void *userd, long timeout_ms)
 {
   struct timespec t0, now;
   long            elapsed_ms = 0;
+  uint32_t        gpget;
+
+  /* A channel class that does not publish GPGet gives us nothing to poll.
+   * Draining is insurance rather than a hot path -- the last mc_memcpy
+   * already polled its semaphore to completion -- so skip rather than
+   * inventing a value. */
+  if (!mc_userd_try_get_gpget(userd, &gpget))
+    return;
+
   clock_gettime(CLOCK_MONOTONIC, &t0);
-  while (userd->GPPut != userd->GPGet)
+  while (USERD(userd)->GPPut != USERD(userd)->GPGet)
   {
     volatile int s;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -370,11 +416,11 @@ void drain_channel(volatile HopperAControlGPFifo *userd, long timeout_ms)
     if (elapsed_ms > timeout_ms)
     {
       WARN_LOG("drain_channel: timeout after %ld ms (GPPut=0x%x GPGet=0x%x)",
-               elapsed_ms, userd->GPPut, userd->GPGet);
+               elapsed_ms, USERD(userd)->GPPut, USERD(userd)->GPGet);
       return;
     }
     for (s = 0; s < MC_POLL_SPIN_ITERATIONS
-                && userd->GPPut != userd->GPGet; s++)
+                && USERD(userd)->GPPut != USERD(userd)->GPGet; s++)
       ;
   }
 }

@@ -17,6 +17,8 @@ link to `libcuda` or `libcudart`. The current revision is tied to driver
 | UVM client | `mc/driver/uvm.c` | GPU and VA-space registration, external ranges, buffer mappings, and the primary channel |
 | Submission | `mc/hal/submit.c` | Copy methods, GPFIFO entries, USERD updates, doorbells, semaphores, and timeouts |
 | VA-space policy | `mc/core/vaspace.c` | Paper-F1 identity pool and the two carrier VA spaces |
+| Lifecycle | `mc/core/context.c`, `mc/core/channel.c` | Context init/fini and per-kind channel bring-up |
+| Allocation | `mc/core/alloc.c`, `mc/core/memcpy.c` | Allocation table, allocators, and copy dispatch |
 | Compute | `mc/arch/hopper/qmd_v04.*`, `mc/experimental/compute.c` | Hopper QMD construction and compute-channel submission |
 | SM-authored copy | `mc/experimental/sm_owner.c`, `mc/kernels/` | An SM thread authors work for a copy-engine channel |
 

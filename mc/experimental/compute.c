@@ -12,7 +12,7 @@
  * the channel-management library stays general and the kernel-launch
  * code can grow independently.
  *
- * Library-internal: includes mc/internal/*.h.  Compiled into
+ * Library-internal: includes the internal headers.  Compiled into
  * libmc.so alongside the other library TUs (core/core.c, driver/rm.c,
  * driver/uvm.c, hal/submit.c, core/vaspace.c, arch/hopper/qmd_v04.c); not
  * exposed as a separate public surface.
@@ -39,6 +39,7 @@
 #include "internal/rm.h"
 #include "internal/submit.h"
 #include "internal/vaspace.h"
+#include "internal/alloc.h"
 #include "internal/compute.h"
 #include "arch/hopper/qmd_v04.h"
 

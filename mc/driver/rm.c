@@ -14,7 +14,7 @@
  *      the fields and invariants that matter for one RM class each.
  *
  * Also hosts mc_debug() — the verbose-logging gate used by the log
- * macros in mc/internal/*.h.  Defined here because driver/rm.c is always
+ * macros in the internal headers.  Defined here because driver/rm.c is always
  * part of the libmc.so link.
  */
 

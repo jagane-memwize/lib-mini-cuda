@@ -89,11 +89,13 @@ LIBMC_MAP    := mc/libmc.map
 # Sources, grouped by layer.  core/ and hal/ are architecture-neutral;
 # driver/ wraps the RM and UVM ioctl surfaces; arch/<name>/ holds
 # per-architecture code; experimental/ holds the research paths.
-MC_CORE_SRCS := mc/core/core.c mc/core/vaspace.c
+MC_CORE_SRCS := mc/core/context.c mc/core/alloc.c mc/core/channel.c \
+                mc/core/memcpy.c mc/core/vaspace.c
 MC_HAL_SRCS  := mc/hal/submit.c
 MC_DRV_SRCS  := mc/driver/rm.c mc/driver/uvm.c
 MC_ARCH_SRCS := mc/arch/hopper/qmd_v04.c
-MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c
+MC_EXP_SRCS  := mc/experimental/compute.c mc/experimental/sm_owner.c \
+                mc/experimental/doorbell.c
 
 MC_LIB_SRCS := $(MC_CORE_SRCS) $(MC_HAL_SRCS) $(MC_DRV_SRCS) \
                $(MC_ARCH_SRCS) $(MC_EXP_SRCS)
@@ -321,24 +323,29 @@ sm_owner: mc/arch/hopper/sm_owner_sass.h
 # compiled -fPIC and linked -shared.  mc/internal/*.h is a prereq
 # only for rebuild tracking — public consumers include mc.h.
 #
-# Sources (one TU per topical band):
-#   driver/rm.c            — RM ioctl wrappers (alloc/free/map/control + typed
-#                        object allocators).  Hosts mc_debug() too.
-#   driver/uvm.c           — UVM ioctl wrappers (initialize, register/unregister,
-#                        map/unmap external allocation, register channel).
-#   hal/submit.c        — method-stream + GPFIFO entry builders +
-#                        mc_channel_arm/submit/poll_sema + drain_channel.
-#   core/vaspace.c       — VA pool (Paper-F1 anchor) + mc_va_space_* helpers.
-#   core/core.c          — lifecycle: per-kind channel init/fini + mc_init/
-#                        mc_fini + mc_malloc/mc_free + mc_memcpy + the two
-#                        CE-doorbell demos.
-#   arch/hopper/qmd_v04.c   — Hopper QMD V04 builder + embedded SASS.
-#   experimental/compute.c  — HOPPER_COMPUTE_A demos (mc_compute_doorbell_kernel,
-#                        mc_memcpy_gpu_doorbell_sm, mc_compute_get_scratch).
-#   experimental/sm_owner.c      — SM-authored CE submission helper.  Library-internal
-#                        (declared in mc/internal/*.h); reached through the
-#                        public API via mc_memcpy(..., MC_XFER_SM).
-#                        Embeds the sm_owner kernel from arch/hopper/sm_owner_sass.h.
+# Sources, one TU per concern:
+#   driver/rm.c              RM ioctl wrappers (alloc/free/map/control + typed
+#                            object allocators).  Hosts mc_debug() too.
+#   driver/uvm.c             UVM ioctl wrappers (initialize, register/unregister,
+#                            map/unmap external allocation, register channel).
+#   hal/submit.c             method-stream + GPFIFO entry builders +
+#                            mc_channel_arm/submit/poll_sema + drain_channel.
+#                            The only TU that names the USERD class struct.
+#   core/context.c           mc_init / mc_fini.
+#   core/channel.c           per-kind channel bring-up and teardown.
+#   core/alloc.c             allocation table + mc_malloc_* / mc_free /
+#                            mc_host_register / mc_gpu_va.
+#   core/memcpy.c            mc_memcpy and its VAS/agent dispatch.
+#   core/vaspace.c           VA pool (Paper-F1 anchor) + mc_va_space_* helpers.
+#   arch/hopper/qmd_v04.c    Hopper QMD V04 builder + embedded SASS.
+#   experimental/compute.c   HOPPER_COMPUTE_A demos (mc_compute_doorbell_kernel,
+#                            mc_memcpy_gpu_doorbell_sm, mc_compute_get_scratch).
+#   experimental/doorbell.c  host-authored CE-doorbell demos
+#                            (mc_dbell_demo_ring, mc_memcpy_gpu_doorbell_ce).
+#   experimental/sm_owner.c  SM-authored CE submission helper.  Library-internal
+#                            (declared in internal/compute.h); reached through
+#                            the public API via mc_memcpy(..., MC_XFER_SM).
+#                            Embeds arch/hopper/sm_owner_sass.h.
 # Per-TU compile.  Header prerequisites come from the generated .d files
 # (DEPFLAGS), so adding an internal header needs no Makefile edit.
 $(BUILD_DIR)/%.o: mc/%.c compat/nvidia.mk | $(BUILD_DIR) check-nvidia-source
