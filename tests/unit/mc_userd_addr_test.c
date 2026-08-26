@@ -148,10 +148,18 @@ static bool hi_mask_for_family(mc_arch_family_t f, uint32_t *out_mask)
 {
   switch (f) {
     case MC_ARCH_AMPERE:    *out_mask = GA100_HI_MASK; return true;
-    /* Ada reuses AMPERE_CHANNEL_GPFIFO_A, so it inherits Ampere's runlist
-     * entry format along with the class. */
+    /* Ada ships no dev_ram.h definition of this field -- only ga100, gh100
+     * and gb10b define it at all.  Ada picks up GA100's 8-bit check through
+     * the chip HAL, not through reusing AMPERE_CHANNEL_GPFIFO_A: the dispatch
+     * table at src/nvidia/generated/g_kernel_channel_nvoc.c:1353 binds
+     * "GA100 | GA102 | GA103 | GA104 | GA106 | GA107 | AD102 | AD103 | AD104 |
+     * AD106 | AD107" to kchannelIsUserdAddrSizeValid_GA100.  So an Ada backend
+     * must set userd_requires_vidmem too. */
     case MC_ARCH_ADA:       *out_mask = GA100_HI_MASK; return true;
     case MC_ARCH_HOPPER:    *out_mask = GH100_HI_MASK; return true;
+    /* GB10B/GB20B/GB20C bind to kchannelIsUserdAddrSizeValid_GB10B and the
+     * rest of Blackwell falls to the GH100 default; both are 20 bits, so one
+     * mask covers the family (same file, :1357-1364). */
     case MC_ARCH_BLACKWELL: *out_mask = GH100_HI_MASK; return true;
     default:                return false;
   }
