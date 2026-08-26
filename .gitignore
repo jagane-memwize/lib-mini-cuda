@@ -5,3 +5,11 @@
 *.d
 mc/kernels/*.cubin
 mc/kernels/*.text.bin
+
+# Editor / tooling scratch, never part of a build.
+compile_commands.json
+__pycache__/
+
+# Local agent working notes.  Machine- and session-specific by design; they
+# describe this checkout and the hardware it is tested on, not the library.
+.claude/
