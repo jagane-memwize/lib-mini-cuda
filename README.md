@@ -1,6 +1,9 @@
 # libmc
 
-`libmc` is a small CUDA-runtime-like library built directly on NVIDIA's raw RM
+[![Contributor-Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-fbab2c.svg)](CODE_OF_CONDUCT.md)
+[![Maintainer](https://img.shields.io/badge/Maintainer-Cisco-00bceb.svg)](https://opensource.cisco.com)
+
+`libmc` (lib mini-cuda) is a small CUDA-runtime-like library built directly on NVIDIA's raw RM
 and UVM interfaces. It does not link against `libcuda` or `libcudart`, and it
 does not aim to reimplement them.
 
@@ -128,5 +131,9 @@ one from the same board.
 
 ## License
 
-The `libmc` sources are MIT licensed. The NVIDIA submodule retains NVIDIA's
+The `libmc` sources are MIT licensed, see [`LICENSE`](LICENSE). The NVIDIA submodule retains NVIDIA's
 original license terms. See [`NOTICE`](NOTICE).
+
+## Contact
+
+Maxime Peim - [maxime.peim@gmail.com](maxime.peim@gmail.com)
