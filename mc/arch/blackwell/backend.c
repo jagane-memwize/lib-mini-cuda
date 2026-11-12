@@ -75,34 +75,42 @@
  * stops matching.  Each remaining part is a one-bit change that belongs with
  * a run on it, not ahead of one.
  *
- * No compute
- * ----------
- * GB206 exposes BLACKWELL_COMPUTE_B (0xcec0) and `cls.compute` records that,
- * so the class list is reported accurately and hal/detect.c issues no
- * spurious "compute class absent" warning.  But `compute` is NULL, because
- * two things needed to drive it cannot be established from the pinned tree:
+ * Compute: launches yes, SM-authored submission not yet
+ * ------------------------------------------------------
+ * `compute` is arch/blackwell/qmd_v05.c, a QMD V05 builder written from Mesa
+ * NVK the way the V03 and V04 builders were, under the QMD exception
+ * CLAUDE.md grants (no QMD header past Kepler's ships in the driver tree).
+ * `kernels.store_dword` is this tree's own sm_120 cubin.  Together those are
+ * what MC_FEAT_COMPUTE_LAUNCH needs, and it is offered.
  *
- *   - Method dialect.  class/clcec0.h is a stub -- 30 lines, a class id and
- *     nothing else, no method addresses at all.  hal/method_abi.h can assert
- *     that BLACKWELL_COMPUTE_A (0xcdc0) agrees with the C7C0 dialect the
- *     shared emitters write, and does; it can say nothing about 0xcec0, and
- *     neither can this file.  Guessing that _B inherits _A's dialect is
- *     exactly the kind of assumption CLAUDE.md requires be established from
- *     the headers or a capture first.
+ * `kernels.sm_owner` is still NULL, so MC_FEAT_XFER_SM is not offered.  That
+ * is only a missing cubin -- the sm_owner kernel has far stricter SASS
+ * requirements (19 system-scope stores, asserted by the Makefile) and
+ * wants its own verification on this SM version rather than a rebuild and
+ * an assumption.
  *
- *   - QMD layout.  hal/arch.h records Blackwell as QMD V05.  There is no V05
- *     builder in the tree (only V03 for Ampere and V04 for Hopper) and no
- *     clcec0qmd.h anywhere in the driver source to build one from.
+ * The one assumption left, stated plainly
+ * ---------------------------------------
+ * libmc allocates BLACKWELL_COMPUTE_B (0xcec0) and drives it with the C7C0
+ * method dialect the shared emitters in hal/methods.c write.  class/clcec0.h
+ * is a stub -- 30 lines, a class id, no method addresses -- so 0xcec0's
+ * dialect cannot be asserted directly.  Three things make this the same kind
+ * of claim Hopper already rests on rather than a guess:
  *
- * A third thing is merely missing rather than unknowable: there is no sm_120
- * cubin for the embedded kernels, so both blobs are NULL.  hal/arch.h
- * anticipates this ("generating a cubin needs nvcc and a toolkit that targets
- * the SM version in question, which is not always to hand").
+ *   - Hopper does exactly this: it allocates HOPPER_COMPUTE_A (0xcbc0) and
+ *     is driven with 0xC7C0.  Class id and method dialect are independent
+ *     axes, which hal/method_abi.h exists to say.
+ *   - BLACKWELL_COMPUTE_A (0xcdc0) ships a full header and agrees with C7C0
+ *     on every method libmc emits; method_abi.h asserts each one, so a
+ *     divergence is a compile error.
+ *   - Within a generation, the _A and _B compute classes agree: method_abi.h
+ *     asserts NVC6C0 (AMPERE_COMPUTE_A) against NVC7C0 (AMPERE_COMPUTE_B)
+ *     for the same method set.  Mesa reaches the same conclusion for
+ *     Blackwell from the QMD side -- clcdc0qmd.h and clcec0qmd.h are
+ *     byte-identical apart from their prefix.
  *
- * Adding compute later means a V05 QMD builder with golden bits in
- * tests/unit/mc_qmd_test.c, sm_120 cubins, the cb0 offsets read off
- * `cuobjdump --dump-sass` for those cubins, and evidence for 0xcec0's method
- * dialect.  None of it changes this file beyond two pointers.
+ * And then it was run: see the GB206 line below.  A wrong method address
+ * here does not corrupt anything silently, it faults the channel.
  */
 
 #include "class/cl50a0.h"        /* NV50_MEMORY_VIRTUAL */
@@ -117,7 +125,11 @@
 
 #include "hal/arch.h"
 
-extern const mc_arch_ops_t mc_arch_blackwell_ops;
+/* Generated from mc/kernels/store_dword.cu; see KERNEL_RULE in the Makefile. */
+#include "arch/blackwell/store_dword_sass.h"
+
+extern const mc_arch_ops_t    mc_arch_blackwell_ops;
+extern const mc_compute_ops_t mc_arch_blackwell_compute;
 #include "internal/types.h"
 
 const mc_arch_desc_t mc_arch_blackwell = {
@@ -160,13 +172,14 @@ const mc_arch_desc_t mc_arch_blackwell = {
     },
 
     .ops     = &mc_arch_blackwell_ops,
-    .compute = NULL,     /* see "No compute" above */
+    .compute = &mc_arch_blackwell_compute,   /* QMD V05, arch/blackwell/qmd_v05.c */
 
     .kernels = {
-        /* No sm_120 cubin in this build.  NULL bytes makes the features that
-         * launch a kernel unavailable; it does not make anything broken. */
+        /* No sm_120 sm_owner cubin yet, so MC_FEAT_XFER_SM stays
+         * unavailable.  NULL bytes is a normal state, not a breakage. */
         .sm_owner    = { NULL, 0, 0 },
-        .store_dword = { NULL, 0, 0 },
+        .store_dword = { mc_store_dword_kernel_sass, MC_STORE_DWORD_SASS_LEN,
+                         MC_STORE_DWORD_REGS },
     },
 
     .cap = {

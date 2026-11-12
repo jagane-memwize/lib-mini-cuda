@@ -17,17 +17,25 @@ driver, captures, trace tools, and protocol notes.
 - The Blackwell backend carries two qualifications the others do not. It was
   verified on drivers 620.70.06 (GB206, RTX PRO 2000 Blackwell Laptop) and
   595.71.05 (GB202, RTX PRO 5000 Blackwell) rather than on the pinned
-  610.43.02; and it has no compute, because `class/clcec0.h` is a stub that
-  defines BLACKWELL_COMPUTE_B's class id and no method addresses, and no QMD
-  V05 builder or sm_120 cubin exists. Its `rm_impl_mask` names GB202 and
-  GB206 — the parts actually run — and not the rest of GB20x; adding one is
-  a bit and a hardware run. See the header of
-  `mc/arch/blackwell/backend.c`.
+  610.43.02; and it offers `compute_launch` but not `xfer_sm`, for want of
+  an sm_owner cubin on sm_120 — the QMD V05 builder
+  (`mc/arch/blackwell/qmd_v05.c`, from Mesa NVK under the QMD exception
+  below) and the sm_120 store_dword cubin are both in the tree. Its
+  `rm_impl_mask` names GB202 and GB206 — the parts actually run — and not
+  the rest of GB20x; adding one is a bit and a hardware run. See the header
+  of `mc/arch/blackwell/backend.c`.
+- Blackwell allocates BLACKWELL_COMPUTE_B (0xCEC0) but is driven with the
+  0xC7C0 method dialect, exactly as Hopper allocates 0xCBC0 and is driven
+  with 0xC7C0. `class/clcec0.h` is a stub with no method addresses, so that
+  rests on `hal/method_abi.h` asserting 0xCDC0 against 0xC7C0, on the same
+  file asserting Ampere's _A against its _B, and on the hardware run. Do not
+  quietly extend it to a class without at least that much.
 - Not every architecture provides every feature, and that is a property of the
   silicon rather than a gap. Ampere and Ada lack a BAR1 usermode aperture, so
-  no doorbell PTE, so no FB carrier and nothing SM-authored; Blackwell GB206
-  has the aperture and the FB carrier but, lacking compute in this build,
-  still nothing SM-authored. Query with `mc_feature_supported()`; never
+  no doorbell PTE, so no FB carrier and nothing SM-authored; Blackwell has
+  the aperture, the FB carrier and kernel launch, but still nothing
+  SM-authored, because `xfer_sm` additionally needs the sm_owner cubin and
+  none is built for sm_120. Query with `mc_feature_supported()`; never
   assume from the driver version.
 - `third_party/open-gpu-kernel-modules` is pinned to the matching official
   source. Do not silently build against another driver revision: a different
