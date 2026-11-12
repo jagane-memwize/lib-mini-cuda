@@ -37,20 +37,39 @@
  * GA100 -- and the same reason that backend exists.  A descriptor built from
  * the _A class names would compile, then fail the class-list check at init.
  *
- * Why the implementation mask is narrow
- * -------------------------------------
+ * Which implementations are claimed, and why not all of them
+ * ----------------------------------------------------------
  * ARCHITECTURE_GB200 (0x1b0) is the family id for all of GB20x, not just the
  * GB200 part: ctrl2080mc.h lists GB200, GB202, GB203, GB205, GB206, GB207,
  * GB20B and GB20C under "valid ARCHITECTURE_GB20x implementation values".
- * Only GB206 (implementation 6) has been run, so only bit 6 is set.
+ * Two of those have been run, and the mask names exactly those two:
  *
- * That is deliberately stricter than the "mask == 0 means any" default
- * hal/arch.h recommends, and it follows the precedent arch/ampere_ga10x sets
- * by declining GA10B: the class set is what actually matters, and it is not
- * uniform across this family.  GB20B and GB20C in particular bind to a
- * different USERD-address HAL than GB206 does (see the cap note below), which
- * is concrete evidence that GB20x is not one thing.  Widening the mask is a
- * one-bit change -- but it belongs with a run on that part, not ahead of one.
+ *   GB206 (6)  RTX PRO 2000 Blackwell Generation Laptop GPU, driver
+ *              620.70.06.  Full matrix: 35/35 passed, 33 skipped for the
+ *              absent compute; mc_demo 7.24 GB/s D2H peak.
+ *   GB202 (2)  RTX PRO 5000 Blackwell (48 GiB), driver 595.71.05.  This
+ *              descriptor passed hal/detect.c's class-list verification
+ *              unchanged -- every class above was present, including
+ *              0xcec0 -- and mc_demo moved 256 MiB x10 D2H at 28.28 GB/s
+ *              with verification PASS.  Reached through MC_ARCH_FORCE
+ *              before this part was in the mask; the force overrides
+ *              selection but NOT verify_classes, so the class check is
+ *              real evidence rather than a bypass.
+ *
+ * Two dies at opposite ends of GB20x -- a 48 GiB workstation card and a
+ * laptop part, on drivers five releases apart -- agreeing on the whole class
+ * set is good evidence that this descriptor describes GB20x and not one
+ * chip.  It is not evidence about the parts nobody has run, so they stay
+ * out: this keeps the precedent arch/ampere_ga10x sets by declining GA10B,
+ * and it is deliberately stricter than the "mask == 0 means any" default
+ * hal/arch.h recommends.
+ *
+ * GB20B and GB20C are the ones to be most careful with.  They bind to a
+ * different USERD-address HAL than GB206 and GB202 do (see the cap note
+ * below -- the reach works out the same, but the binding differs), and the
+ * GA10B precedent is that the SoC parts of a family are where the topology
+ * stops matching.  Each remaining part is a one-bit change that belongs with
+ * a run on it, not ahead of one.
  *
  * No compute
  * ----------
@@ -102,8 +121,10 @@ const mc_arch_desc_t mc_arch_blackwell = {
     .family = MC_ARCH_BLACKWELL,
 
     .rm_architecture = NV2080_CTRL_MC_ARCH_INFO_ARCHITECTURE_GB200,  /* 0x1b0 */
-    /* GB206 only; see "Why the implementation mask is narrow" above. */
-    .rm_impl_mask    = 1u << NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GB206,
+    /* The GB20x parts actually run; see the header.  Each addition is one
+     * bit and one hardware run. */
+    .rm_impl_mask    = (1u << NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GB202)
+                     | (1u << NV2080_CTRL_MC_ARCH_INFO_IMPLEMENTATION_GB206),
 
     .cls = {
         .usermode       = BLACKWELL_USERMODE_A,        /* 0xC761 */

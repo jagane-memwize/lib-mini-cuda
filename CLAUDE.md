@@ -10,17 +10,19 @@ driver, captures, trace tools, and protocol notes.
 
 - This revision targets NVIDIA driver 610.43.02. Supported architectures are
   Hopper, Ampere GA100 (`mc/arch/ampere`), Ampere GA10x
-  (`mc/arch/ampere_ga10x`), Ada and Blackwell GB206 (`mc/arch/blackwell`),
+  (`mc/arch/ampere_ga10x`), Ada and Blackwell GB20x (`mc/arch/blackwell`),
   each verified on hardware. Note GA100 and GA10x report the same
   architecture id and are told apart by `rm_impl_mask`, so a new backend
   sharing an architecture must narrow both masks.
 - The Blackwell backend carries two qualifications the others do not. It was
-  verified on driver 620.70.06 rather than the pinned 610.43.02, on an RTX
-  PRO 2000 Blackwell Generation Laptop GPU; and it has no compute, because
-  `class/clcec0.h` is a stub that defines BLACKWELL_COMPUTE_B's class id and
-  no method addresses, and no QMD V05 builder or sm_120 cubin exists. It
-  claims GB206 alone (`rm_impl_mask` bit 6), not the rest of GB20x. See the
-  header of `mc/arch/blackwell/backend.c`.
+  verified on drivers 620.70.06 (GB206, RTX PRO 2000 Blackwell Laptop) and
+  595.71.05 (GB202, RTX PRO 5000 Blackwell) rather than on the pinned
+  610.43.02; and it has no compute, because `class/clcec0.h` is a stub that
+  defines BLACKWELL_COMPUTE_B's class id and no method addresses, and no QMD
+  V05 builder or sm_120 cubin exists. Its `rm_impl_mask` names GB202 and
+  GB206 — the parts actually run — and not the rest of GB20x; adding one is
+  a bit and a hardware run. See the header of
+  `mc/arch/blackwell/backend.c`.
 - Not every architecture provides every feature, and that is a property of the
   silicon rather than a gap. Ampere and Ada lack a BAR1 usermode aperture, so
   no doorbell PTE, so no FB carrier and nothing SM-authored; Blackwell GB206
