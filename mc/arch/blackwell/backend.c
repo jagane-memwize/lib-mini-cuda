@@ -47,14 +47,18 @@
  *   GB206 (6)  RTX PRO 2000 Blackwell Generation Laptop GPU, driver
  *              620.70.06.  Full matrix: 35/35 passed, 33 skipped for the
  *              absent compute; mc_demo 7.24 GB/s D2H peak.
- *   GB202 (2)  RTX PRO 5000 Blackwell (48 GiB), driver 595.71.05.  This
- *              descriptor passed hal/detect.c's class-list verification
- *              unchanged -- every class above was present, including
- *              0xcec0 -- and mc_demo moved 256 MiB x10 D2H at 28.28 GB/s
- *              with verification PASS.  Reached through MC_ARCH_FORCE
- *              before this part was in the mask; the force overrides
- *              selection but NOT verify_classes, so the class check is
- *              real evidence rather than a bypass.
+ *   GB202 (2)  RTX PRO 5000 Blackwell (48 GiB), driver 595.71.05.  Full
+ *              matrix: 35/35 passed, the same 33 skipped for the absent
+ *              compute; mc_demo 28.23 GB/s D2H peak.  Selected by
+ *              detection on its own merits, not forced.
+ *
+ *              Its feature set is identical to GB206's, including the two
+ *              that depend on the BAR1 usermode aperture -- carrier_fb
+ *              (mc_carrier_host_demo --fb, 28.16 GB/s) and
+ *              ce_doorbell_ring (mc_dbell_demo and every
+ *              mc_dbell_chain_demo cell).  Those are the ones worth naming:
+ *              a copy benchmark alone would not have exercised the
+ *              doorbell PTE.
  *
  * Two dies at opposite ends of GB20x -- a 48 GiB workstation card and a
  * laptop part, on drivers five releases apart -- agreeing on the whole class
