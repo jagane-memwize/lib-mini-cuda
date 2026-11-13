@@ -83,11 +83,12 @@
  * `kernels.store_dword` is this tree's own sm_120 cubin.  Together those are
  * what MC_FEAT_COMPUTE_LAUNCH needs, and it is offered.
  *
- * `kernels.sm_owner` is still NULL, so MC_FEAT_XFER_SM is not offered.  That
- * is only a missing cubin -- the sm_owner kernel has far stricter SASS
- * requirements (19 system-scope stores, asserted by the Makefile) and
- * wants its own verification on this SM version rather than a rebuild and
- * an assumption.
+ * `kernels.sm_owner` is this tree's sm_120 build of the same kernel, so
+ * MC_FEAT_XFER_SM is offered too and the whole matrix runs: 68/68 passed,
+ * nothing skipped.  Its SASS was reviewed rather than merely counted --
+ * sm_90 and sm_120 lower it to the identical store/fence sequence, 16
+ * pushbuffer dwords, then a fence before each of the GPFIFO entry, the
+ * USERD GPPut and the doorbell.
  *
  * The one assumption left, stated plainly
  * ---------------------------------------
@@ -125,7 +126,8 @@
 
 #include "hal/arch.h"
 
-/* Generated from mc/kernels/store_dword.cu; see KERNEL_RULE in the Makefile. */
+/* Generated from the sources under mc/kernels; see KERNEL_RULE in the Makefile. */
+#include "arch/blackwell/sm_owner_sass.h"
 #include "arch/blackwell/store_dword_sass.h"
 
 extern const mc_arch_ops_t    mc_arch_blackwell_ops;
@@ -175,9 +177,8 @@ const mc_arch_desc_t mc_arch_blackwell = {
     .compute = &mc_arch_blackwell_compute,   /* QMD V05, arch/blackwell/qmd_v05.c */
 
     .kernels = {
-        /* No sm_120 sm_owner cubin yet, so MC_FEAT_XFER_SM stays
-         * unavailable.  NULL bytes is a normal state, not a breakage. */
-        .sm_owner    = { NULL, 0, 0 },
+        .sm_owner = { mc_sm_owner_kernel_sass, MC_SM_OWNER_SASS_LEN,
+                      MC_SM_OWNER_REGS },
         .store_dword = { mc_store_dword_kernel_sass, MC_STORE_DWORD_SASS_LEN,
                          MC_STORE_DWORD_REGS },
     },

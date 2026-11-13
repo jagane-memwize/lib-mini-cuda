@@ -17,10 +17,9 @@ driver, captures, trace tools, and protocol notes.
 - The Blackwell backend carries two qualifications the others do not. It was
   verified on drivers 620.70.06 (GB206, RTX PRO 2000 Blackwell Laptop) and
   595.71.05 (GB202, RTX PRO 5000 Blackwell) rather than on the pinned
-  610.43.02; and it offers `compute_launch` but not `xfer_sm`, for want of
-  an sm_owner cubin on sm_120 — the QMD V05 builder
-  (`mc/arch/blackwell/qmd_v05.c`, from Mesa NVK under the QMD exception
-  below) and the sm_120 store_dword cubin are both in the tree. Its
+  610.43.02. It offers every feature, including `xfer_sm`, on the strength
+  of a QMD V05 builder (`mc/arch/blackwell/qmd_v05.c`, from Mesa NVK under
+  the QMD exception below) and sm_120 cubins for both kernels. Its
   `rm_impl_mask` names GB202 and GB206 — the parts actually run — and not
   the rest of GB20x; adding one is a bit and a hardware run. See the header
   of `mc/arch/blackwell/backend.c`.
@@ -32,10 +31,8 @@ driver, captures, trace tools, and protocol notes.
   quietly extend it to a class without at least that much.
 - Not every architecture provides every feature, and that is a property of the
   silicon rather than a gap. Ampere and Ada lack a BAR1 usermode aperture, so
-  no doorbell PTE, so no FB carrier and nothing SM-authored; Blackwell has
-  the aperture, the FB carrier and kernel launch, but still nothing
-  SM-authored, because `xfer_sm` additionally needs the sm_owner cubin and
-  none is built for sm_120. Query with `mc_feature_supported()`; never
+  no doorbell PTE, so no FB carrier and nothing SM-authored. Hopper and
+  Blackwell offer everything. Query with `mc_feature_supported()`; never
   assume from the driver version.
 - `third_party/open-gpu-kernel-modules` is pinned to the matching official
   source. Do not silently build against another driver revision: a different
@@ -77,6 +74,12 @@ driver, captures, trace tools, and protocol notes.
   address does not reliably fit under 2^40. That is `cap.userd_requires_vidmem`;
   `tests/unit/mc_userd_addr_test.c` checks each backend's flag against the
   header it comes from.
+- A kernel under `mc/kernels/` must not name a class id as a constant. The
+  copy class differs per architecture (`0xC8B5` on GH100, `0xCAB5` on
+  GB20x), and a `SET_OBJECT` naming a class the device does not expose
+  wedges the victim channel instead of refusing the method — which looks
+  like a malformed submission, not a wrong class. Pass it in through
+  `struct mc_sm_owner_args`, from `cls.dma_copy`.
 - Changes to a kernel under `mc/kernels/` must retain the Makefile's
   generated-SASS assertions, which are per-architecture and cover every kernel,
   not just `sm_owner.cu`. Review the disassembly when store or fence code
